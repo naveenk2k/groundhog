@@ -1,0 +1,10 @@
+# Groundhog companion dependencies.
+#
+# This file is intentionally minimal for now (issue #1: server boots and
+# authenticates over localhost). Later issues add:
+#   - yt-dlp (transcript fetching, #2)
+#   - sentence-transformers (embeddings, #3)
+#   - sqlite-vec (corpus storage, #3)
+#   - an Anthropic client (scoring, #5)
+fastapi
+uvicorn

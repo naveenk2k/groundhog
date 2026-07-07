@@ -1,8 +1,6 @@
 # Groundhog companion dependencies.
 #
 # This file is intentionally minimal for now. Later issues add:
-#   - sentence-transformers (embeddings, #3)
-#   - sqlite-vec (corpus storage, #3)
 #   - an Anthropic client (scoring, #5)
 fastapi
 uvicorn
@@ -12,3 +10,17 @@ uvicorn
 # moves over time, and yt-dlp is actively maintained against exactly that
 # churn. See DECISIONS.md "Transcript retrieval".
 yt-dlp==2025.10.14
+
+# Local embeddings (#3): CPU-friendly, keeps everything on-machine.
+sentence-transformers
+
+# Corpus storage (#3): sqlite-vec is loaded as a runtime SQLite extension.
+sqlite-vec
+
+# apsw instead of the stdlib sqlite3 module (#3): Apple's system Python
+# (what a bare `python3 -m venv` in install.sh picks up unless Homebrew/
+# python.org Python is on PATH first) ships a SQLite build without
+# loadable-extension support, so sqlite3.Connection.enable_load_extension
+# doesn't exist there. apsw bundles its own SQLite build with extension
+# loading enabled and works the same on every platform.
+apsw

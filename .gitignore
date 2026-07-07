@@ -21,3 +21,6 @@ __pycache__/
 
 # OS
 .DS_Store
+
+# Claude Code local state (worktrees, local permission settings)
+.claude/

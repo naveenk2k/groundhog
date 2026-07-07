@@ -1,15 +1,22 @@
-# Python
-__pycache__/
-*.pyc
-.venv/
-
-# Companion secrets and local state
-.env
-.groundhog-secret
+# Personal data — never commit
+watch-history.json
+Takeout/
 *.sqlite
 *.sqlite3
-watch-history.json
+corpus.db
+
+# Secrets
+.env
+*.key
+.groundhog-secret
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# Companion local state
 .logs/
 
-# OS cruft
+# OS
 .DS_Store

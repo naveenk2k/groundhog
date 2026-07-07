@@ -28,13 +28,26 @@ still applies).
 Full transcripts, not excerpts
 -------------------------------
 The prompt includes the new video's full transcript plus the **full
-transcripts** of the top-K matches, each labeled with its title and
-creator. This is a deliberate, already-settled decision (not something to
-"optimize" back down to excerpts) - see DECISIONS.md and PLAN.md
-("Scoring", "Claude call: prompt content and tunables"). Creator is
-included so the model can distinguish "the same channel repeating itself"
-from "different creators independently converging on the same topic" -
-see DECISIONS.md ("Corpus schema").
+transcripts** of the top-K matches, each labeled with its title, creator,
+and (when available) the date it was watched. This is a deliberate,
+already-settled decision (not something to "optimize" back down to
+excerpts) - see DECISIONS.md and PLAN.md ("Scoring", "Claude call: prompt
+content and tunables"). Creator is included so the model can distinguish
+"the same channel repeating itself" from "different creators
+independently converging on the same topic" - see DECISIONS.md ("Corpus
+schema"). The watch date lets the model reference a specific matched
+video concretely ("the road trip video you watched last month") instead
+of only gesturing at "your watch history" as an abstract whole, and is
+omitted from the prompt (not just from what gets said) when a corpus row
+doesn't have one, so there's nothing for the model to awkwardly not-quite-
+reference.
+
+Second person, not third
+--------------------------
+The system prompt explicitly instructs the model to address the viewer
+directly ("you", "your watch history") rather than describing them in the
+third person ("the viewer", "the user's watch history") - the latter reads
+like a report about someone else, not a tool talking to you.
 
 Model and K are both parameters, not hardcoded
 ------------------------------------------------
@@ -61,6 +74,7 @@ from __future__ import annotations
 import logging
 import os
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Optional, TypedDict
 
 import httpx
@@ -129,17 +143,25 @@ _VERDICT_SCHEMA = {
             "type": "string",
             "description": (
                 "A short (1-3 sentence) explanation grounding the scores "
-                "in specifics from the transcripts - e.g. what the new "
-                "video covers that the matches didn't, or where it "
-                "overlaps with a specific matched video."
+                "in specifics from the transcripts, written directly to "
+                "the viewer in second person ('you', 'your watch "
+                "history') rather than about them in the third person. "
+                "When the comparison really centers on one particular "
+                "watched video, name it directly (e.g. 'this covers much "
+                "of the same ground as the road trip video you watched') "
+                "instead of only gesturing at 'your watch history' in "
+                "the abstract. Mention when that video was watched only "
+                "if it adds something useful to say - not as a "
+                "mechanical timestamp on every sentence."
             ),
         },
         "recommendation": {
             "type": "string",
             "description": (
                 "A short, holistic, plain-language take on whether the "
-                "video is worth watching, given everything above. Not a "
-                "formula on the scores - your own judgment call."
+                "video is worth watching, given everything above - "
+                "written directly to the viewer ('you'), not about them. "
+                "Not a formula on the scores - your own judgment call."
             ),
         },
     },
@@ -147,27 +169,39 @@ _VERDICT_SCHEMA = {
 }
 
 _SYSTEM_PROMPT = """\
-You are helping someone decide whether a YouTube video they just opened is \
-worth their time, by comparing it to videos they've already watched on \
-similar topics.
+You are talking directly to someone deciding whether a YouTube video they \
+just opened is worth their time, by comparing it to videos they've \
+already watched on similar topics. Speak to them directly, in second \
+person - "you", "your watch history" - not about them in the third \
+person ("the viewer", "the user").
 
 You will be given the new video's full transcript, plus the full \
-transcripts of the videos from their watch history that are most similar \
+transcripts of the videos from your watch history that are most similar \
 in topic (found via vector search - they are not random, they are the \
 closest matches to the new video). Each transcript is labeled with its \
-title and creator.
+title, creator, and - when available - the date you watched it.
 
 Judge substance, not just topic overlap. Two videos on the same subject \
 can be totally different in value: one might be lazy filler restating the \
 obvious, the other might be genuinely rigorous and go somewhere new. Read \
-the actual text and decide whether the new video is adding something the \
-viewer hasn't already gotten from the matched videos.
+the actual text and decide whether the new video is adding something you \
+haven't already gotten from the matched videos.
 
 Pay attention to creator: the same channel revisiting its own topic is a \
 different signal from several different creators independently covering \
 the same ground - the former is more likely to be repetitive, the latter \
 suggests the topic is worth multiple treatments and the new video should \
 be judged on whether it adds its own angle.
+
+Be specific and personable, not generic. When the comparison really \
+centers on one particular watched video, name it directly by title \
+("this is similar to the road trip video you watched") instead of only \
+referencing "your watch history" as an abstract whole. Mention when you \
+watched it only if that's useful context - e.g. it was recent enough to \
+be a real rewatch-risk, or long enough ago that a refresher might be \
+welcome - not as a mechanical timestamp bolted onto every sentence. If a \
+date isn't given for a video, or mentioning it wouldn't add anything, \
+just don't bring it up.
 
 Return your scores and a short, concrete explanation as JSON matching the \
 required schema. There is no scoring formula behind these numbers - give \
@@ -196,13 +230,44 @@ class NewVideo:
     transcript: str
 
 
-def _format_video_block(label: str, title: str, creator: str, transcript: str) -> str:
-    return (
-        f"--- {label} ---\n"
-        f"Title: {title or '(untitled)'}\n"
-        f"Creator: {creator or '(unknown)'}\n"
-        f"Transcript:\n{transcript}\n"
-    )
+def _format_watched_at(watched_at: str) -> Optional[str]:
+    """Turn a corpus row's ISO 8601 `watched_at` into a readable date for the
+    prompt (e.g. "July 7, 2026"), or None if it's missing/unparseable.
+
+    Older corpus rows (backfilled before this field was reliably populated)
+    or a bare timestamp format mismatch shouldn't break the prompt - the
+    system prompt is told to only mention a date when one is given, so
+    omitting it here just means Gemini talks about that video without a
+    date, not a crash.
+    """
+    if not watched_at:
+        return None
+    try:
+        # Python's fromisoformat only accepts a "Z" suffix (rather than an
+        # explicit "+00:00" offset) starting in 3.11 - Takeout's own
+        # watch-history export timestamps are "Z"-suffixed (see backfill.py),
+        # so without normalizing this, every backfilled video would silently
+        # never get a date shown, even on newer Python where it'd parse fine.
+        normalized = watched_at.replace("Z", "+00:00")
+        return datetime.fromisoformat(normalized).strftime("%B %-d, %Y")
+    except ValueError:
+        return None
+
+
+def _format_video_block(
+    label: str, title: str, creator: str, transcript: str, watched_at: Optional[str] = None
+) -> str:
+    lines = [
+        f"--- {label} ---",
+        f"Title: {title or '(untitled)'}",
+        f"Creator: {creator or '(unknown)'}",
+    ]
+    if watched_at:
+        formatted = _format_watched_at(watched_at)
+        if formatted:
+            lines.append(f"Watched on: {formatted}")
+    lines.append(f"Transcript:\n{transcript}\n")
+    return "\n".join(lines)
 
 
 def _build_user_message(new_video: NewVideo, matches: list[CorpusMatch]) -> str:
@@ -210,19 +275,23 @@ def _build_user_message(new_video: NewVideo, matches: list[CorpusMatch]) -> str:
 
     if matches:
         parts.append(
-            f"\nHere are the {len(matches)} closest videos from the viewer's watch "
+            f"\nHere are the {len(matches)} closest videos from your watch "
             "history, ordered by topical similarity (closest first):\n"
         )
         for i, match in enumerate(matches, start=1):
             parts.append(
                 _format_video_block(
-                    f"WATCHED VIDEO {i}", match.title, match.creator, match.transcript_text
+                    f"WATCHED VIDEO {i}",
+                    match.title,
+                    match.creator,
+                    match.transcript_text,
+                    watched_at=match.watched_at,
                 )
             )
     else:
         parts.append(
-            "\nThe viewer's watch history has no videos similar enough to include "
-            "here - judge the new video on its own terms.\n"
+            "\nYour watch history has no videos similar enough to include here "
+            "- judge the new video on its own terms.\n"
         )
 
     return "\n".join(parts)

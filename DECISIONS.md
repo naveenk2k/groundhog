@@ -101,6 +101,38 @@ building a switchable interface for a hypothetical future provider would be
 speculative. If a second real need for Claude (or another provider) shows
 up later, that's the point to introduce an abstraction, not before.
 
+## Verdict tone: second person, and naming specific matched videos
+
+**Decision:** the system prompt addresses the viewer directly ("you", "your
+watch history") rather than describing them in the third person ("the
+viewer", "the user"), and explicitly instructs naming a specific matched
+video by title when the comparison really centers on one, rather than only
+referencing "your watch history" as an abstract whole. Each matched video's
+watch date is now included in the prompt (it previously wasn't — `corpus.py`
+tracked `watched_at` on every row, but `verdict.py` never actually passed it
+through) so the model can reference *when* something was watched, but only
+when that adds something useful — not as a mechanical timestamp on every
+sentence.
+
+**Why:** the original third-person framing read like a report about someone
+else ("this topic is completely new to the viewer's watch history") rather
+than a tool talking to you, and only ever gestured at "the matches" in
+aggregate even though the corpus data names exactly which video is being
+compared against. Verified live against the real corpus: a near-duplicate
+video correctly produced "this new video is identical in content to 'AI
+agents explained...' which you watched very recently on July 7, 2026",
+while a genuinely unrelated video's verdict used second person throughout
+but correctly didn't force a date reference where one wouldn't help.
+
+**Gotcha caught while fixing this:** Python's `datetime.fromisoformat` only
+accepts a `Z` suffix (vs. an explicit `+00:00` offset) starting in 3.11 —
+but Takeout's own watch-history timestamps are `Z`-suffixed, and this
+project's venv runs 3.9. Without normalizing `Z` to `+00:00` before parsing,
+every backfilled video would have silently never gotten a date shown at all
+(harmless — the code already degrades gracefully when a date can't be
+parsed — but silently wrong for the common case, not just for malformed
+edge cases).
+
 ## Backfill
 
 **Decision:** sequential (not parallelized), skip-and-log videos with no

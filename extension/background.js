@@ -9,12 +9,18 @@
  * right place for outbound requests to the companion to live.
  */
 
+// Shared K default/clamp logic (issue #9) - also used by options.js so the
+// slider and the request-building code here agree on the same default and
+// valid range without duplicating the numbers.
+importScripts("options-k.js");
+
 const COMPANION_ORIGIN = "http://127.0.0.1:8787";
 
 // #5's real endpoint (companion/app.py's POST /verdict). Fires once per
-// video-opened event from content.js. `k` and `model` are left out here so
-// the companion applies its own server-side defaults - issue #9 (options
-// page K slider) is what will start passing them explicitly.
+// video-opened event from content.js. `k` is read from chrome.storage.local
+// (issue #9's options page slider, key 'groundhogK') and passed explicitly -
+// see readK() below. `model` is still left out so the companion applies its
+// own server-side default; a model picker is a later addition (PLAN.md).
 const VERDICT_PATH = "/verdict";
 
 // Fires once per video, when content.js's WatchThresholdTracker crosses the
@@ -27,17 +33,38 @@ const VIDEO_WATCHED_PATH = "/videos/watched";
 // ("X-Groundhog-Secret") or every request gets a 401.
 const SECRET_HEADER = "X-Groundhog-Secret";
 
-// TODO(#9): there is no options page yet (that's a separate issue - "Extension:
-// options page for secret paste and K slider"). Until it exists, the secret
-// has to be seeded into chrome.storage.local some other way - e.g. from the
-// service worker's console in chrome://extensions during manual testing:
-//   chrome.storage.local.set({ groundhogSecret: "<value from .groundhog-secret>" })
-// Once the options page lands, it should write to this same key so this
-// read path doesn't need to change.
+// issue #9's options page writes the shared secret to this same
+// chrome.storage.local key, pasted in manually from the repo's
+// `.groundhog-secret` file (see DECISIONS.md "Extension <-> companion
+// authentication" for why this is a manual paste, not an automated
+// handshake) - this read path doesn't need to change now that the page
+// exists.
 async function readSecret() {
   const { groundhogSecret } = await chrome.storage.local.get("groundhogSecret");
   return groundhogSecret || null;
 }
+
+// issue #9's options page writes the chosen K to this chrome.storage.local
+// key. Falls back to DEFAULT_K (options-k.js) if it's never been set - e.g.
+// the very first run before the user has ever opened the options page -
+// so behavior is identical whether or not the options page has been opened
+// yet, matching companion/app.py's own server-side default of 5.
+async function readK() {
+  const { groundhogK } = await chrome.storage.local.get("groundhogK");
+  return clampK(groundhogK);
+}
+
+// User-facing copy for the "no secret yet" case (issue #9's acceptance
+// criteria: "without a valid secret saved, the overlay shows a clear 'not
+// configured' state rather than silently failing"). This is what actually
+// renders in overlay.js's error body - see overlay-state.js's
+// applyVerdictResult, which just takes `result.error` as the display string -
+// so it needs to read as an instruction a real user can act on, not an
+// internal storage-key detail. `notConfigured: true` is included alongside
+// it so overlay.js (or issue #10's unified failure-badge work) can branch on
+// this specific case later without string-matching the message.
+const NOT_CONFIGURED_MESSAGE =
+  "Groundhog isn't set up yet - open the extension's options page and paste your secret from .groundhog-secret.";
 
 /**
  * Call the companion's /verdict endpoint for a video and return either the
@@ -51,11 +78,13 @@ async function readSecret() {
 async function requestVerdict(videoId) {
   const secret = await readSecret();
   if (!secret) {
-    const message =
-      "no secret configured in chrome.storage.local (key 'groundhogSecret')";
-    console.warn("Groundhog: " + message + "; skipping verdict request for video " + videoId);
-    return { error: message };
+    console.warn(
+      "Groundhog: no secret configured in chrome.storage.local (key 'groundhogSecret'); " +
+        "skipping verdict request for video " + videoId
+    );
+    return { error: NOT_CONFIGURED_MESSAGE, notConfigured: true };
   }
+  const k = await readK();
 
   try {
     const response = await fetch(COMPANION_ORIGIN + VERDICT_PATH, {
@@ -64,7 +93,7 @@ async function requestVerdict(videoId) {
         "Content-Type": "application/json",
         [SECRET_HEADER]: secret,
       },
-      body: JSON.stringify({ video_id: videoId }),
+      body: JSON.stringify({ video_id: videoId, k }),
     });
     if (!response.ok) {
       console.warn(

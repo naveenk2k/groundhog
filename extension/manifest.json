@@ -1,0 +1,22 @@
+{
+  "manifest_version": 3,
+  "name": "Groundhog",
+  "version": "0.1.0",
+  "description": "Checks a YouTube video against your watch history before you sink time into it.",
+  "permissions": [
+    "storage"
+  ],
+  "host_permissions": [
+    "http://127.0.0.1:8787/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["*://www.youtube.com/watch*"],
+      "js": ["video-id.js", "content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}

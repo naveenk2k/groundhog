@@ -1,9 +1,11 @@
 # Groundhog companion dependencies.
-#
-# This file is intentionally minimal for now. Later issues add:
-#   - an Anthropic client (scoring, #5)
 fastapi
 uvicorn
+
+# Claude call (#5): structured tool-use verdicts. Reads ANTHROPIC_API_KEY
+# from the environment the same way the SDK always does - no custom key
+# storage here, see DECISIONS.md "Claude call: prompt content and tunables".
+anthropic
 
 # Transcript fetching (#2). Pinned, not hand-rolled HTTP: YouTube's list of
 # PO-token-exempt clients (we use android_vr - see companion/transcript.py)

@@ -1,0 +1,18 @@
+# Personal data — never commit
+watch-history.json
+Takeout/
+*.sqlite
+*.sqlite3
+corpus.db
+
+# Secrets
+.env
+*.key
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# OS
+.DS_Store

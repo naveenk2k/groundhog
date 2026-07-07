@@ -17,6 +17,7 @@ __pycache__/
 
 # Companion local state
 .logs/
+.backfill-checkpoint.jsonl
 
 # OS
 .DS_Store

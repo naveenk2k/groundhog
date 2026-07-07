@@ -1,7 +1,8 @@
 /**
- * Shared video-ID extraction logic, used by both content.js (content-script
- * context) and background.js (service-worker context, via importScripts).
- * Kept in one file so the two contexts can't drift on parsing rules.
+ * Video-ID extraction logic, loaded before content.js in manifest.json so
+ * extractVideoId is available as a global in the content-script context.
+ * background.js does not need this - it receives the already-extracted
+ * video ID from content.js via chrome.runtime.sendMessage.
  */
 
 /**

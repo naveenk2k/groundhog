@@ -9,7 +9,7 @@ goes — plus a plain-language recommendation. It doesn't skip or hide
 anything; you still decide what to watch. It only covers regular
 `youtube.com/watch` pages (not Shorts or embedded players).
 
-![Groundhog overlay showing a verdict](docs/screenshots/overlay-verdict.png)
+![Groundhog overlay showing a verdict on a real YouTube video](docs/screenshots/overlay-in-context.jpeg)
 
 When it can't form an opinion — no transcript, the companion isn't running,
 or the model call failed — it shows the same neutral "can't evaluate" badge
@@ -169,9 +169,6 @@ overlay), but a few things are worth knowing:
 - **No verdict caching.** Every video open re-runs the full pipeline, even on
   a rewatch.
 - **No spend cap.** There's no tracked ceiling on Gemini API usage yet.
-- **The overlay doesn't tear down when you navigate away from a watch page**
-  ([#11](https://github.com/naveenk2k/groundhog/issues/11)) — it's built for
-  `youtube.com/watch` pages and isn't yet cleaned up if you leave one.
 - A few in-code comments still reference internal GitHub issue numbers that
   could use a pass for readability
   ([#12](https://github.com/naveenk2k/groundhog/issues/12)).

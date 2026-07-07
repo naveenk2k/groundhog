@@ -1,0 +1,73 @@
+#!/usr/bin/env python3
+"""Manually add a single watched video to the persistent corpus.
+
+This bridges the gap until #6 (backfill.py, bulk import from a Takeout
+export) and #7 (extension auto-adds videos on crossing the watch threshold)
+are built - until then, this is the only way to grow the real corpus.
+Fetches the transcript and title via the existing companion.transcript
+module, embeds it, and inserts it into the corpus DB at its default,
+persistent path (companion/config.py CORPUS_DB_FILE - repo root, gitignored).
+
+Usage:
+    python add_video.py https://www.youtube.com/watch?v=VIDEO_ID
+    python add_video.py VIDEO_ID
+"""
+
+from __future__ import annotations
+
+import re
+import sys
+from datetime import datetime, timezone
+from urllib.parse import parse_qs, urlparse
+
+from companion.corpus import embed_text, get_connection, insert_video
+from companion.transcript import fetch_transcript
+
+_BARE_ID_RE = re.compile(r"^[\w-]{11}$")
+
+
+def extract_video_id(url_or_id: str) -> str | None:
+    """Accept either a bare 11-character video ID or a full watch URL."""
+    if _BARE_ID_RE.match(url_or_id):
+        return url_or_id
+    parsed = urlparse(url_or_id)
+    query_id = parse_qs(parsed.query).get("v", [None])[0]
+    if query_id:
+        return query_id
+    return None
+
+
+def main() -> None:
+    if len(sys.argv) != 2:
+        print(f"Usage: {sys.argv[0]} <youtube-url-or-video-id>", file=sys.stderr)
+        sys.exit(1)
+
+    video_id = extract_video_id(sys.argv[1])
+    if video_id is None:
+        print(f"Could not extract a video ID from {sys.argv[1]!r}", file=sys.stderr)
+        sys.exit(1)
+
+    print(f"Fetching transcript for {video_id}...")
+    result = fetch_transcript(video_id)
+    if result["transcript"] is None:
+        print(f"No transcript available: {result['reason']}", file=sys.stderr)
+        sys.exit(1)
+
+    title = result["title"] or video_id
+    print(f"Embedding '{title}'...")
+    embedding = embed_text(result["transcript"])
+
+    conn = get_connection()
+    insert_video(
+        conn,
+        video_id=video_id,
+        title=title,
+        watched_at=datetime.now(timezone.utc).isoformat(),
+        transcript_text=result["transcript"],
+        embedding=embedding,
+    )
+    print(f"Added '{title}' ({video_id}) to the corpus.")
+
+
+if __name__ == "__main__":
+    main()

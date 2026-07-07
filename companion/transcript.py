@@ -43,6 +43,7 @@ _VTT_TAG_RE = re.compile(r"<[^>]+>")
 class TranscriptResult(TypedDict):
     transcript: str | None
     reason: str | None
+    title: str | None
 
 
 class _SilentLogger:
@@ -134,25 +135,35 @@ def fetch_transcript(video_id: str) -> TranscriptResult:
         with yt_dlp.YoutubeDL(_ydl_opts()) as ydl:
             info = ydl.extract_info(url, download=False)
     except yt_dlp.utils.DownloadError as e:
-        return {"transcript": None, "reason": f"video unavailable: {e}"}
+        return {"transcript": None, "reason": f"video unavailable: {e}", "title": None}
     except Exception as e:  # noqa: BLE001 - deliberately broad, see docstring
-        return {"transcript": None, "reason": f"unexpected error fetching video info: {e}"}
+        return {
+            "transcript": None,
+            "reason": f"unexpected error fetching video info: {e}",
+            "title": None,
+        }
 
     if info is None:
-        return {"transcript": None, "reason": "video unavailable or private"}
+        return {"transcript": None, "reason": "video unavailable or private", "title": None}
+
+    title = info.get("title")
 
     subtitle_url = _pick_subtitle_url(info)
     if subtitle_url is None:
-        return {"transcript": None, "reason": "no English captions available"}
+        return {"transcript": None, "reason": "no English captions available", "title": title}
 
     try:
         with yt_dlp.YoutubeDL(_ydl_opts()) as ydl:
             vtt_text = ydl.urlopen(subtitle_url).read().decode("utf-8", errors="replace")
     except Exception as e:  # noqa: BLE001
-        return {"transcript": None, "reason": f"failed to download caption content: {e}"}
+        return {
+            "transcript": None,
+            "reason": f"failed to download caption content: {e}",
+            "title": title,
+        }
 
     transcript = _vtt_to_text(vtt_text)
     if not transcript:
-        return {"transcript": None, "reason": "caption track was empty after parsing"}
+        return {"transcript": None, "reason": "caption track was empty after parsing", "title": title}
 
-    return {"transcript": transcript, "reason": None}
+    return {"transcript": transcript, "reason": None, "title": title}

@@ -22,6 +22,16 @@ SECRET_FILE = Path(os.environ.get("GROUNDHOG_SECRET_FILE", str(REPO_ROOT / ".gro
 # Header the extension must send on every request (except /health).
 SECRET_HEADER = "X-Groundhog-Secret"
 
+# Corpus DB location can also be overridden (tests use a throwaway path so
+# they never touch a real corpus). Single sqlite file on disk, covered by
+# .gitignore - see companion/corpus.py.
+CORPUS_DB_FILE = Path(os.environ.get("GROUNDHOG_CORPUS_DB", str(REPO_ROOT / "corpus.db")))
+
+# Embedding model: small and fast enough to run on CPU in milliseconds,
+# per PLAN.md. 384-dimensional output - corpus.py's schema is sized to match.
+EMBEDDING_MODEL_NAME = "all-MiniLM-L6-v2"
+EMBEDDING_DIMENSIONS = 384
+
 
 def read_secret() -> str:
     """Read the shared secret from disk.

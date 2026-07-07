@@ -20,7 +20,92 @@
  *   auto-expands once collapsed (see overlay-state.js's applyVerdictResult).
  */
 
+/**
+ * Turn a raw error string (from companion/app.py's `{error: "..."}`,
+ * companion/verdict.py's Gemini failures, or background.js's own
+ * companion-unreachable/timeout messages) into a short, calm, one-line
+ * reason for the "can't evaluate" badge (issue #10).
+ *
+ * Deliberately pattern-matching on recognizable substrings rather than an
+ * exhaustive enum: the three known failure sources (no transcript,
+ * companion unreachable/timed out, Gemini API failure) each produce error
+ * text of a wildly different shape and verbosity, and this only needs to
+ * degrade gracefully for anything unrecognized - not enumerate every
+ * possible internal exception string. Kept outside the IIFE below (and
+ * exported via module.exports) so it's plain, DOM-free, testable logic -
+ * same pattern as overlay-state.js/video-id.js/watch-tracker.js.
+ */
+function classifyOverlayError(raw) {
+  if (typeof raw !== "string" || !raw.trim()) {
+    return "Groundhog couldn't evaluate this video.";
+  }
+  const msg = raw.toLowerCase();
+
+  // companion/app.py: `no transcript available: <reason from transcript.py>`
+  // - reason itself can be a raw yt-dlp exception string, but the prefix is
+  // always this, so it's a safe, generic match regardless of what follows.
+  if (msg.includes("no transcript available")) {
+    return "No transcript available for this video.";
+  }
+
+  // background.js's own client-side AbortController timeout, or any other
+  // message that happens to mention timing out (e.g. a slow Gemini call
+  // wrapped by verdict.py) - distinct from "unreachable" per issue #10's
+  // acceptance criteria (a timeout got this far, so the companion *is*
+  // reachable, it just didn't finish in time).
+  if (msg.includes("timed out") || msg.includes("timeout")) {
+    return "Groundhog took too long to respond.";
+  }
+
+  // TODO(#9): once the options page lands, this is also where a "no secret
+  // configured yet" message from background.js's readSecret() naturally
+  // lands - distinct one-liner pointing at setup rather than a failure.
+  if (msg.includes("no secret configured")) {
+    return "Groundhog isn't set up yet.";
+  }
+
+  // background.js's requestVerdict() catch block: the companion process
+  // itself isn't reachable (not running, wrong port) - browsers surface
+  // this as a generic "Failed to fetch"/NetworkError, not a specific code.
+  if (
+    msg.includes("companion request failed") ||
+    msg.includes("failed to fetch") ||
+    msg.includes("networkerror") ||
+    msg.includes("connection refused") ||
+    msg.includes("econnrefused")
+  ) {
+    return "Groundhog companion isn't running.";
+  }
+
+  if (msg.includes("companion responded with status")) {
+    return "Groundhog companion returned an error.";
+  }
+
+  // companion/verdict.py's Gemini error strings all mention "Gemini" -
+  // covers client/server/generic API errors and the "did not return a
+  // parseable verdict" case.
+  if (msg.includes("gemini")) {
+    return "Couldn't reach the verdict service.";
+  }
+
+  // Generic fallback for anything unrecognized - still calm and short,
+  // never the raw exception text.
+  return "Groundhog couldn't evaluate this video.";
+}
+
+if (typeof module !== "undefined" && module.exports) {
+  module.exports = { classifyOverlayError };
+}
+
 (function () {
+  // No `window`/DOM at all - this file is being `require()`d from Node
+  // (e.g. to unit-test the DOM-free classifyOverlayError above), not
+  // running in a content-script/browser context. Nothing below this point
+  // is meaningful without a document, so just skip installing the overlay.
+  if (typeof window === "undefined") {
+    return;
+  }
+
   // Guard against double-injection: YouTube's SPA navigation re-runs
   // handleNavigation in content.js repeatedly, but this IIFE (and thus the
   // shadow host) should only ever be created once per content-script
@@ -181,8 +266,43 @@
       100% { content: ""; }
     }
 
-    .ghog-error {
+    /* "Can't evaluate" badge (issue #10) - deliberately distinct from both
+     * "checking..." (no dots/spinner) and a real verdict (no score bars, no
+     * bold recommendation line) so it reads as "we don't know" rather than
+     * "this scored badly" or "still working." Muted/monochrome only, same
+     * no-red rule as the rest of the overlay (see the design-tokens comment
+     * above) - a neutral glyph in a soft circle, not a warning triangle or
+     * an alarm color. */
+    .ghog-cant-evaluate {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+    }
+    .ghog-cant-evaluate-icon {
+      flex-shrink: 0;
+      width: 18px;
+      height: 18px;
+      margin-top: 1px;
+      border-radius: 999px;
+      background: var(--ghog-track);
+      color: var(--ghog-fg-secondary);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 11px;
+      line-height: 1;
+    }
+    .ghog-cant-evaluate-text {
+      min-width: 0;
+    }
+    .ghog-cant-evaluate-label {
       font-size: 12px;
+      font-weight: 600;
+      color: var(--ghog-fg-secondary);
+      margin-bottom: 2px;
+    }
+    .ghog-cant-evaluate-reason {
+      font-size: 11.5px;
       color: var(--ghog-fg-secondary);
       line-height: 1.4;
     }
@@ -365,13 +485,34 @@
     }
 
     if (state.phase === "error") {
-      const p = document.createElement("div");
-      p.className = "ghog-error";
-      // Plain error text for now - a unified "can't evaluate" badge across
-      // all failure modes is issue #10, not this one. Just don't crash or
-      // hang: show whatever the companion said.
-      p.textContent = state.data || "Groundhog couldn't evaluate this video.";
-      body.appendChild(p);
+      // Neutral "can't evaluate" badge (issue #10): same treatment no matter
+      // which of the three failure sources produced it (no transcript,
+      // companion unreachable/timed out, Gemini call failure) - only the
+      // one-line reason (classifyOverlayError) differs.
+      const wrap = document.createElement("div");
+      wrap.className = "ghog-cant-evaluate";
+
+      const icon = document.createElement("div");
+      icon.className = "ghog-cant-evaluate-icon";
+      icon.setAttribute("aria-hidden", "true");
+      icon.textContent = "–"; // en dash: reads as "no reading available", not an alarm glyph
+      wrap.appendChild(icon);
+
+      const text = document.createElement("div");
+      text.className = "ghog-cant-evaluate-text";
+
+      const label = document.createElement("div");
+      label.className = "ghog-cant-evaluate-label";
+      label.textContent = "Can't evaluate";
+      text.appendChild(label);
+
+      const reason = document.createElement("div");
+      reason.className = "ghog-cant-evaluate-reason";
+      reason.textContent = classifyOverlayError(state.data);
+      text.appendChild(reason);
+
+      wrap.appendChild(text);
+      body.appendChild(wrap);
       return;
     }
 
@@ -473,7 +614,7 @@
       return "Groundhog: checking…";
     }
     if (state.phase === "error") {
-      return "Groundhog: –";
+      return "Groundhog: can't evaluate";
     }
     const verdict = state.data || {};
     if (typeof verdict.novelty === "number") {

@@ -39,6 +39,18 @@ const SECRET_HEADER = "X-Groundhog-Secret";
 // authentication" for why this is a manual paste, not an automated
 // handshake) - this read path doesn't need to change now that the page
 // exists.
+
+// Client-side safety net (issue #10): the companion's own Gemini call is
+// bounded at ~45s (companion/verdict.py's DEFAULT_TIMEOUT_SECONDS), and
+// /verdict always resolves to a 200 with either a verdict or an
+// `{ error }` shape - but that only helps if the companion process itself
+// is alive to respond at all. If the process hangs (stuck request, wedged
+// event loop, etc.) or never got a chance to answer, nothing else here
+// would ever stop "checking..." from spinning forever. 60s comfortably
+// clears the companion's own 45s budget plus network/queueing overhead,
+// so a real slow-but-eventually-successful call still gets to finish.
+const VERDICT_TIMEOUT_MS = 60000;
+
 async function readSecret() {
   const { groundhogSecret } = await chrome.storage.local.get("groundhogSecret");
   return groundhogSecret || null;
@@ -86,6 +98,9 @@ async function requestVerdict(videoId) {
   }
   const k = await readK();
 
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), VERDICT_TIMEOUT_MS);
+
   try {
     const response = await fetch(COMPANION_ORIGIN + VERDICT_PATH, {
       method: "POST",
@@ -94,6 +109,7 @@ async function requestVerdict(videoId) {
         [SECRET_HEADER]: secret,
       },
       body: JSON.stringify({ video_id: videoId, k }),
+      signal: controller.signal,
     });
     if (!response.ok) {
       console.warn(
@@ -106,13 +122,25 @@ async function requestVerdict(videoId) {
     // shape the overlay expects - just pass it through.
     return await response.json();
   } catch (err) {
-    // The companion may simply not be running, or the request may have
-    // timed out - fail into an error result the overlay can show, rather
-    // than leaving it stuck on "checking..." forever. A unified "can't
-    // evaluate" badge treatment across all failure modes is issue #10; for
-    // now the overlay just shows this message plainly.
+    // fetch() rejects with a DOMException named "AbortError" when the
+    // AbortController above fires - distinguish that from "companion isn't
+    // running at all" so overlay.js's classifyOverlayError can give it its
+    // own one-line reason (issue #10's acceptance criteria: a timed-out
+    // call is a distinct case from an unreachable companion).
+    if (err && err.name === "AbortError") {
+      console.warn(
+        "Groundhog: verdict request timed out after " + VERDICT_TIMEOUT_MS + "ms for video " + videoId
+      );
+      return { error: "companion request timed out after " + (VERDICT_TIMEOUT_MS / 1000) + "s" };
+    }
+    // The companion may simply not be running - fail into an error result
+    // the overlay can show (as a neutral "can't evaluate" badge, see
+    // overlay.js's classifyOverlayError), rather than leaving it stuck on
+    // "checking..." forever.
     console.warn("Groundhog: verdict request failed", err);
     return { error: "companion request failed: " + (err && err.message ? err.message : String(err)) };
+  } finally {
+    clearTimeout(timeoutId);
   }
 }
 

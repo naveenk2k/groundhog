@@ -18,6 +18,12 @@ const COMPANION_ORIGIN = "http://127.0.0.1:8787";
 // is a placeholder; update it to match whatever route #2/#3/#5 land with.
 const VIDEO_OPENED_PATH = "/videos/opened";
 
+// Fires once per video, when content.js's WatchThresholdTracker crosses the
+// 70%/5-minute watch threshold (issue #7). The companion fetches the
+// transcript, embeds it, and adds it to the corpus - see
+// companion/app.py's POST /videos/watched.
+const VIDEO_WATCHED_PATH = "/videos/watched";
+
 // Header name must match companion/auth.py's SECRET_HEADER exactly
 // ("X-Groundhog-Secret") or every request gets a 401.
 const SECRET_HEADER = "X-Groundhog-Secret";
@@ -66,8 +72,45 @@ async function postVideoOpened(videoId) {
   }
 }
 
+async function postVideoWatched(videoId) {
+  const secret = await readSecret();
+  if (!secret) {
+    console.warn(
+      "Groundhog: no secret configured in chrome.storage.local (key 'groundhogSecret'); " +
+        "skipping watched-video request for " + videoId
+    );
+    return;
+  }
+
+  try {
+    const response = await fetch(COMPANION_ORIGIN + VIDEO_WATCHED_PATH, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        [SECRET_HEADER]: secret,
+      },
+      body: JSON.stringify({ video_id: videoId }),
+    });
+    if (!response.ok) {
+      console.warn(
+        "Groundhog: companion responded " + response.status + " to watched-video request for " + videoId
+      );
+    }
+  } catch (err) {
+    // Same rationale as postVideoOpened: the companion may just not be
+    // running - fail quietly rather than spamming the console.
+    console.warn("Groundhog: watched-video request failed", err);
+  }
+}
+
 chrome.runtime.onMessage.addListener((message) => {
-  if (message && message.type === "GROUNDHOG_VIDEO_OPENED" && message.videoId) {
+  if (!message) {
+    return;
+  }
+  if (message.type === "GROUNDHOG_VIDEO_OPENED" && message.videoId) {
     postVideoOpened(message.videoId);
+  }
+  if (message.type === "GROUNDHOG_VIDEO_WATCHED" && message.videoId) {
+    postVideoWatched(message.videoId);
   }
 });

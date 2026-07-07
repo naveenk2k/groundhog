@@ -47,6 +47,7 @@ CREATE TABLE IF NOT EXISTS videos (
     id INTEGER PRIMARY KEY,
     video_id TEXT UNIQUE NOT NULL,
     title TEXT NOT NULL,
+    creator TEXT NOT NULL DEFAULT '',
     watched_at TEXT NOT NULL,
     transcript_text TEXT NOT NULL
 );
@@ -56,18 +57,30 @@ CREATE VIRTUAL TABLE IF NOT EXISTS videos_vec USING vec0(
 );
 """
 
+# `creator` was added after the schema first shipped. `CREATE TABLE IF NOT
+# EXISTS` doesn't retrofit existing databases, so any corpus.db created
+# before this change needs an explicit ALTER TABLE - this keeps a corpus
+# someone already started building (e.g. via add_video.py) from breaking.
+_MIGRATIONS = [
+    "ALTER TABLE videos ADD COLUMN creator TEXT NOT NULL DEFAULT ''",
+]
+
 
 @dataclass
 class CorpusMatch:
     """One row returned by a corpus similarity query.
 
     Carries everything #4 needs to build the Claude prompt: the matched
-    video's title, when it was watched, and its full transcript text (per
-    DECISIONS.md, full transcripts are sent to Claude, not excerpts).
+    video's title, creator, when it was watched, and its full transcript
+    text (per DECISIONS.md, full transcripts are sent to Claude, not
+    excerpts). Creator lets Claude distinguish "same channel revisiting its
+    own topic" from "several different creators independently covering the
+    same ground" - two very different signals for judging novelty.
     """
 
     video_id: str
     title: str
+    creator: str
     watched_at: str
     transcript_text: str
     distance: float
@@ -115,7 +128,15 @@ def get_connection(db_path: Optional[str] = None) -> apsw.Connection:
     conn.load_extension(sqlite_vec.loadable_path())
     conn.enable_load_extension(False)
     conn.execute(_SCHEMA)
+    _apply_migrations(conn)
     return conn
+
+
+def _apply_migrations(conn: apsw.Connection) -> None:
+    existing_columns = {row[1] for row in conn.execute("PRAGMA table_info(videos)")}
+    if "creator" not in existing_columns:
+        for statement in _MIGRATIONS:
+            conn.execute(statement)
 
 
 # --- Insert ----------------------------------------------------------------
@@ -125,6 +146,7 @@ def insert_video(
     conn: apsw.Connection,
     video_id: str,
     title: str,
+    creator: str,
     watched_at: str,
     transcript_text: str,
     embedding: Optional[Sequence[float]] = None,
@@ -158,19 +180,19 @@ def insert_video(
             cursor.execute(
                 """
                 UPDATE videos
-                SET title = ?, watched_at = ?, transcript_text = ?
+                SET title = ?, creator = ?, watched_at = ?, transcript_text = ?
                 WHERE id = ?
                 """,
-                (title, watched_at, transcript_text, row_id),
+                (title, creator, watched_at, transcript_text, row_id),
             )
             cursor.execute("DELETE FROM videos_vec WHERE rowid = ?", (row_id,))
         else:
             cursor.execute(
                 """
-                INSERT INTO videos (video_id, title, watched_at, transcript_text)
-                VALUES (?, ?, ?, ?)
+                INSERT INTO videos (video_id, title, creator, watched_at, transcript_text)
+                VALUES (?, ?, ?, ?, ?)
                 """,
-                (video_id, title, watched_at, transcript_text),
+                (video_id, title, creator, watched_at, transcript_text),
             )
             row_id = conn.last_insert_rowid()
 
@@ -201,7 +223,7 @@ def query_similar(
 
     rows = conn.execute(
         """
-        SELECT v.video_id, v.title, v.watched_at, v.transcript_text, vv.distance
+        SELECT v.video_id, v.title, v.creator, v.watched_at, v.transcript_text, vv.distance
         FROM videos_vec AS vv
         JOIN videos AS v ON v.id = vv.rowid
         WHERE vv.embedding MATCH ? AND k = ?
@@ -214,9 +236,10 @@ def query_similar(
         CorpusMatch(
             video_id=video_id,
             title=title,
+            creator=creator,
             watched_at=watched_at,
             transcript_text=transcript_text,
             distance=distance,
         )
-        for video_id, title, watched_at, transcript_text, distance in rows
+        for video_id, title, creator, watched_at, transcript_text, distance in rows
     ]

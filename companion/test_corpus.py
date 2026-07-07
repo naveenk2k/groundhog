@@ -18,6 +18,7 @@ TRANSCRIPTS = {
     "sourdough": (
         "sourdough_101",
         "Sourdough Baking 101",
+        "Bread Baking Channel",
         "2026-01-05T10:00:00Z",
         "Today we're making sourdough bread from scratch. First you need a "
         "healthy starter that's been fed flour and water for a week. Mix "
@@ -29,6 +30,7 @@ TRANSCRIPTS = {
     "focaccia": (
         "focaccia_basics",
         "Easy Focaccia at Home",
+        "Bread Baking Channel",
         "2026-01-06T10:00:00Z",
         "This focaccia recipe starts with a wet, high-hydration dough made "
         "from flour, water, yeast, and olive oil. After a couple of rises "
@@ -39,6 +41,7 @@ TRANSCRIPTS = {
     "kubernetes": (
         "k8s_intro",
         "Kubernetes Basics for Beginners",
+        "DevOps Toolbox",
         "2026-01-07T10:00:00Z",
         "Kubernetes is a container orchestration system that schedules "
         "workloads across a cluster of machines. Pods are the smallest "
@@ -50,6 +53,7 @@ TRANSCRIPTS = {
     "docker": (
         "docker_deep_dive",
         "Docker Deep Dive",
+        "DevOps Toolbox",
         "2026-01-08T10:00:00Z",
         "Docker packages an application and its dependencies into a "
         "container image, built in layers from a Dockerfile. Containers "
@@ -60,6 +64,7 @@ TRANSCRIPTS = {
     "astronomy": (
         "black_holes",
         "How Black Holes Actually Work",
+        "Deep Space Explained",
         "2026-01-09T10:00:00Z",
         "A black hole forms when a massive star collapses under its own "
         "gravity after running out of fuel to fuse. Nothing that crosses "
@@ -77,8 +82,8 @@ class CorpusTest(unittest.TestCase):
         os.remove(self.db_path)  # let apsw create it fresh
         self.conn = corpus.get_connection(self.db_path)
 
-        for key, (video_id, title, watched_at, text) in TRANSCRIPTS.items():
-            corpus.insert_video(self.conn, video_id, title, watched_at, text)
+        for key, (video_id, title, creator, watched_at, text) in TRANSCRIPTS.items():
+            corpus.insert_video(self.conn, video_id, title, creator, watched_at, text)
 
     def tearDown(self):
         self.conn.close()
@@ -123,21 +128,22 @@ class CorpusTest(unittest.TestCase):
         )
 
     def test_query_returns_fields_needed_for_claude_prompt(self):
-        embedding = corpus.embed_text(TRANSCRIPTS["kubernetes"][3])
+        embedding = corpus.embed_text(TRANSCRIPTS["kubernetes"][4])
         [top] = corpus.query_similar(self.conn, embedding, k=1)
         self.assertEqual(top.video_id, "k8s_intro")
         self.assertEqual(top.title, "Kubernetes Basics for Beginners")
+        self.assertEqual(top.creator, "DevOps Toolbox")
         self.assertEqual(top.watched_at, "2026-01-07T10:00:00Z")
-        self.assertEqual(top.transcript_text, TRANSCRIPTS["kubernetes"][3])
+        self.assertEqual(top.transcript_text, TRANSCRIPTS["kubernetes"][4])
 
     def test_query_k_zero_returns_nothing(self):
         embedding = corpus.embed_text("anything")
         self.assertEqual(corpus.query_similar(self.conn, embedding, k=0), [])
 
     def test_reinsert_replaces_existing_row(self):
-        video_id, title, watched_at, text = TRANSCRIPTS["docker"]
+        video_id, title, creator, watched_at, text = TRANSCRIPTS["docker"]
         updated_text = text + " Updated with a note about BuildKit."
-        corpus.insert_video(self.conn, video_id, title, watched_at, updated_text)
+        corpus.insert_video(self.conn, video_id, title, creator, watched_at, updated_text)
 
         count = self.conn.execute("SELECT COUNT(*) FROM videos").fetchone()[0]
         self.assertEqual(count, len(TRANSCRIPTS))  # no duplicate row
@@ -146,6 +152,74 @@ class CorpusTest(unittest.TestCase):
         [top] = corpus.query_similar(self.conn, embedding, k=1)
         self.assertEqual(top.video_id, video_id)
         self.assertEqual(top.transcript_text, updated_text)
+
+
+class CorpusMigrationTest(unittest.TestCase):
+    """A corpus.db created before the `creator` column existed must keep
+    working - this project's own corpus.db already had a real row in it
+    when this column was added, so this isn't a hypothetical."""
+
+    def setUp(self):
+        fd, self.db_path = tempfile.mkstemp(suffix=".sqlite")
+        os.close(fd)
+        os.remove(self.db_path)
+
+        # Build the pre-`creator` schema by hand and seed one row, simulating
+        # a corpus.db that predates this migration.
+        import apsw
+        import sqlite_vec
+
+        old_conn = apsw.Connection(self.db_path)
+        old_conn.enable_load_extension(True)
+        old_conn.load_extension(sqlite_vec.loadable_path())
+        old_conn.enable_load_extension(False)
+        old_conn.execute(
+            f"""
+            CREATE TABLE videos (
+                id INTEGER PRIMARY KEY,
+                video_id TEXT UNIQUE NOT NULL,
+                title TEXT NOT NULL,
+                watched_at TEXT NOT NULL,
+                transcript_text TEXT NOT NULL
+            );
+            CREATE VIRTUAL TABLE videos_vec USING vec0(
+                embedding float[{corpus.EMBEDDING_DIMENSIONS}]
+            );
+            """
+        )
+        old_conn.execute(
+            "INSERT INTO videos (video_id, title, watched_at, transcript_text) "
+            "VALUES ('pre_migration', 'Old Video', '2025-01-01T00:00:00Z', 'some text')"
+        )
+        embedding = corpus.embed_text("some text")
+        old_conn.execute(
+            "INSERT INTO videos_vec (rowid, embedding) VALUES (1, ?)",
+            (sqlite_vec.serialize_float32(embedding),),
+        )
+        old_conn.close()
+
+    def tearDown(self):
+        if os.path.exists(self.db_path):
+            os.remove(self.db_path)
+
+    def test_opening_pre_migration_db_adds_creator_column(self):
+        conn = corpus.get_connection(self.db_path)
+        columns = {row[1] for row in conn.execute("PRAGMA table_info(videos)")}
+        self.assertIn("creator", columns)
+
+        row = conn.execute(
+            "SELECT video_id, title, creator FROM videos WHERE video_id = 'pre_migration'"
+        ).fetchone()
+        self.assertEqual(row, ("pre_migration", "Old Video", ""))
+        conn.close()
+
+    def test_pre_migration_db_still_queryable(self):
+        conn = corpus.get_connection(self.db_path)
+        embedding = corpus.embed_text("some text")
+        [top] = corpus.query_similar(conn, embedding, k=1)
+        self.assertEqual(top.video_id, "pre_migration")
+        self.assertEqual(top.creator, "")
+        conn.close()
 
 
 if __name__ == "__main__":

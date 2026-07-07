@@ -54,7 +54,8 @@ def main() -> None:
         sys.exit(1)
 
     title = result["title"] or video_id
-    print(f"Embedding '{title}'...")
+    creator = result["creator"] or ""
+    print(f"Embedding '{title}' by '{creator or 'unknown creator'}'...")
     embedding = embed_text(result["transcript"])
 
     conn = get_connection()
@@ -62,6 +63,7 @@ def main() -> None:
         conn,
         video_id=video_id,
         title=title,
+        creator=creator,
         watched_at=datetime.now(timezone.utc).isoformat(),
         transcript_text=result["transcript"],
         embedding=embedding,

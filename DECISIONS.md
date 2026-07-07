@@ -38,12 +38,19 @@ to different hosts) regardless of CLI vs Python API. This pushed the
 
 ## Corpus schema
 
-**Decision:** store `video_id`, `title`, `watched_at`, raw `transcript_text`,
-and `embedding` per row — not just the embedding.
+**Decision:** store `video_id`, `title`, `creator`, `watched_at`, raw
+`transcript_text`, and `embedding` per row — not just the embedding.
 
 **Why:** raw text is small (tens of KB/video) and lets the corpus be
 re-embedded later if the embedding model changes, without re-fetching every
-transcript.
+transcript. `creator` was added after the schema first shipped: it lets
+Claude distinguish "the same channel revisiting its own topic" from "several
+different creators independently covering the same ground" — different
+signals for judging novelty that title alone can't carry, since titles
+collide across channels anyway. Cheap to add (already available from both
+Takeout's `subtitles[].name` and yt-dlp's `uploader`/`channel` fields);
+existing corpus rows are migrated in place via `ALTER TABLE` rather than
+requiring a rebuild.
 
 ## Claude call: prompt content and tunables
 

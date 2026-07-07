@@ -44,6 +44,7 @@ class TranscriptResult(TypedDict):
     transcript: str | None
     reason: str | None
     title: str | None
+    creator: str | None
 
 
 class _SilentLogger:
@@ -135,22 +136,41 @@ def fetch_transcript(video_id: str) -> TranscriptResult:
         with yt_dlp.YoutubeDL(_ydl_opts()) as ydl:
             info = ydl.extract_info(url, download=False)
     except yt_dlp.utils.DownloadError as e:
-        return {"transcript": None, "reason": f"video unavailable: {e}", "title": None}
+        return {
+            "transcript": None,
+            "reason": f"video unavailable: {e}",
+            "title": None,
+            "creator": None,
+        }
     except Exception as e:  # noqa: BLE001 - deliberately broad, see docstring
         return {
             "transcript": None,
             "reason": f"unexpected error fetching video info: {e}",
             "title": None,
+            "creator": None,
         }
 
     if info is None:
-        return {"transcript": None, "reason": "video unavailable or private", "title": None}
+        return {
+            "transcript": None,
+            "reason": "video unavailable or private",
+            "title": None,
+            "creator": None,
+        }
 
     title = info.get("title")
+    # yt-dlp exposes the channel name as `uploader`, falling back to
+    # `channel` - both point at the same thing depending on extractor path.
+    creator = info.get("uploader") or info.get("channel")
 
     subtitle_url = _pick_subtitle_url(info)
     if subtitle_url is None:
-        return {"transcript": None, "reason": "no English captions available", "title": title}
+        return {
+            "transcript": None,
+            "reason": "no English captions available",
+            "title": title,
+            "creator": creator,
+        }
 
     try:
         with yt_dlp.YoutubeDL(_ydl_opts()) as ydl:
@@ -160,10 +180,16 @@ def fetch_transcript(video_id: str) -> TranscriptResult:
             "transcript": None,
             "reason": f"failed to download caption content: {e}",
             "title": title,
+            "creator": creator,
         }
 
     transcript = _vtt_to_text(vtt_text)
     if not transcript:
-        return {"transcript": None, "reason": "caption track was empty after parsing", "title": title}
+        return {
+            "transcript": None,
+            "reason": "caption track was empty after parsing",
+            "title": title,
+            "creator": creator,
+        }
 
-    return {"transcript": transcript, "reason": None, "title": title}
+    return {"transcript": transcript, "reason": None, "title": title, "creator": creator}

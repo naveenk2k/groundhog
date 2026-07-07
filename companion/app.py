@@ -7,6 +7,7 @@ authentication - which, as ASGI middleware, gates every route below
 see companion/verdict.py) build on top of it.
 """
 
+import logging
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -16,6 +17,11 @@ from pydantic import BaseModel
 from companion import corpus, verdict
 from companion.auth import SecretAuthMiddleware
 from companion.transcript import fetch_transcript
+
+# Raw failure detail (e.g. yt-dlp's verbose exception text) is logged here
+# for debugging, while responses to the extension stay short and calm - see
+# companion/verdict.py's module docstring for the same split.
+logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Groundhog companion")
 app.add_middleware(SecretAuthMiddleware)
@@ -89,7 +95,8 @@ async def verdict_endpoint(body: VerdictRequest) -> dict:
     """
     fetched = fetch_transcript(body.video_id)
     if fetched["transcript"] is None:
-        return {"error": f"no transcript available: {fetched['reason']}"}
+        logger.error("no transcript for video %s: %s", body.video_id, fetched["reason"])
+        return {"error": "No transcript available for this video."}
 
     embedding = corpus.embed_text(fetched["transcript"])
     matches = corpus.query_similar(_get_corpus_conn(), embedding, body.k)

@@ -83,6 +83,42 @@ test("no-secret-configured maps to a setup-specific reason", () => {
   );
 });
 
+// companion/verdict.py and background.js were updated to log full technical
+// detail server/console-side and return only a short, already-clean message
+// over the wire (not a raw exception dump) - these are the *actual* strings
+// that reach the overlay in practice now, distinct from the older, more
+// technical strings the tests above exercise for backward-compat matching.
+// This guards against the classifier's own substring checks silently
+// falling through to the generic fallback just because the upstream
+// wording changed to already be clean (a real regression caught while
+// fixing this: the old checks looked for keywords like "gemini" that no
+// longer appear once the message itself was cleaned up at the source).
+test("already-clean upstream messages pass through with their intended reason, not the generic fallback", () => {
+  assert.equal(
+    classifyOverlayError("No transcript available for this video."),
+    "No transcript available for this video."
+  );
+  assert.equal(
+    classifyOverlayError("Groundhog took too long to respond."),
+    "Groundhog took too long to respond."
+  );
+  assert.equal(
+    classifyOverlayError(
+      "Groundhog isn't set up yet - open the extension's options page and paste your secret from .groundhog-secret."
+    ),
+    "Groundhog isn't set up yet."
+  );
+  assert.equal(
+    classifyOverlayError("Groundhog isn't configured correctly."),
+    "Groundhog isn't configured correctly."
+  );
+  assert.equal(classifyOverlayError("companion request failed"), "Groundhog companion isn't running.");
+  assert.equal(
+    classifyOverlayError("Couldn't reach the verdict service."),
+    "Couldn't reach the verdict service."
+  );
+});
+
 test("unrecognized errors fall back to a generic calm message instead of the raw text", () => {
   const raw = "totally unrecognized garbage exception xyz123";
   const result = classifyOverlayError(raw);

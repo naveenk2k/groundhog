@@ -48,20 +48,27 @@ function classifyOverlayError(raw) {
     return "No transcript available for this video.";
   }
 
-  // background.js's own client-side AbortController timeout, or any other
-  // message that happens to mention timing out (e.g. a slow Gemini call
-  // wrapped by verdict.py) - distinct from "unreachable" per issue #10's
+  // background.js's own client-side AbortController timeout ("...timed out
+  // after Xs") or companion/verdict.py's own clean timeout message ("took
+  // too long to respond") - distinct from "unreachable" per issue #10's
   // acceptance criteria (a timeout got this far, so the companion *is*
   // reachable, it just didn't finish in time).
-  if (msg.includes("timed out") || msg.includes("timeout")) {
+  if (msg.includes("timed out") || msg.includes("timeout") || msg.includes("took too long")) {
     return "Groundhog took too long to respond.";
   }
 
-  // TODO(#9): once the options page lands, this is also where a "no secret
-  // configured yet" message from background.js's readSecret() naturally
-  // lands - distinct one-liner pointing at setup rather than a failure.
-  if (msg.includes("no secret configured")) {
+  // background.js's NOT_CONFIGURED_MESSAGE (issue #9): no secret has been
+  // pasted into the options page yet - distinct one-liner pointing at setup
+  // rather than a failure.
+  if (msg.includes("isn't set up") || msg.includes("no secret configured")) {
     return "Groundhog isn't set up yet.";
+  }
+
+  // companion/verdict.py: the Gemini client itself couldn't be constructed
+  // (e.g. no GEMINI_API_KEY resolvable at all) - a setup problem, not a
+  // transient failure, but still surfaced through the same neutral badge.
+  if (msg.includes("isn't configured correctly")) {
+    return "Groundhog isn't configured correctly.";
   }
 
   // background.js's requestVerdict() catch block: the companion process
@@ -81,10 +88,12 @@ function classifyOverlayError(raw) {
     return "Groundhog companion returned an error.";
   }
 
-  // companion/verdict.py's Gemini error strings all mention "Gemini" -
-  // covers client/server/generic API errors and the "did not return a
-  // parseable verdict" case.
-  if (msg.includes("gemini")) {
+  // companion/verdict.py's already-clean Gemini-failure message (client/
+  // server/generic API errors, and the "did not return a parseable verdict"
+  // case all return this same text directly - see verdict.py) - matched
+  // here as a direct pass-through, plus the legacy substring in case an
+  // older/unexpected message still mentions Gemini by name.
+  if (msg.includes("couldn't reach the verdict service") || msg.includes("gemini")) {
     return "Couldn't reach the verdict service.";
   }
 
@@ -503,7 +512,7 @@ if (typeof module !== "undefined" && module.exports) {
 
       const label = document.createElement("div");
       label.className = "ghog-cant-evaluate-label";
-      label.textContent = "Can't evaluate";
+      label.textContent = "Can't evaluate video";
       text.appendChild(label);
 
       const reason = document.createElement("div");
@@ -614,7 +623,7 @@ if (typeof module !== "undefined" && module.exports) {
       return "Groundhog: checking…";
     }
     if (state.phase === "error") {
-      return "Groundhog: can't evaluate";
+      return "Groundhog: can't evaluate video";
     }
     const verdict = state.data || {};
     if (typeof verdict.novelty === "number") {

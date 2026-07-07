@@ -112,7 +112,7 @@ async function requestVerdict(videoId) {
       signal: controller.signal,
     });
     if (!response.ok) {
-      console.warn(
+      console.error(
         "Groundhog: companion responded " + response.status + " for video " + videoId
       );
       return { error: "companion responded with status " + response.status };
@@ -128,7 +128,7 @@ async function requestVerdict(videoId) {
     // own one-line reason (issue #10's acceptance criteria: a timed-out
     // call is a distinct case from an unreachable companion).
     if (err && err.name === "AbortError") {
-      console.warn(
+      console.error(
         "Groundhog: verdict request timed out after " + VERDICT_TIMEOUT_MS + "ms for video " + videoId
       );
       return { error: "companion request timed out after " + (VERDICT_TIMEOUT_MS / 1000) + "s" };
@@ -136,9 +136,14 @@ async function requestVerdict(videoId) {
     // The companion may simply not be running - fail into an error result
     // the overlay can show (as a neutral "can't evaluate" badge, see
     // overlay.js's classifyOverlayError), rather than leaving it stuck on
-    // "checking..." forever.
-    console.warn("Groundhog: verdict request failed", err);
-    return { error: "companion request failed: " + (err && err.message ? err.message : String(err)) };
+    // "checking..." forever. The full error (e.g. the browser's raw
+    // "Failed to fetch"/NetworkError text) is logged here for debugging,
+    // not included in the returned message - that field ends up rendered
+    // in the overlay, so it stays a short, calm, recognizable string
+    // ("companion request failed") rather than leaking raw error text to
+    // the user.
+    console.error("Groundhog: verdict request failed for video " + videoId, err);
+    return { error: "companion request failed" };
   } finally {
     clearTimeout(timeoutId);
   }

@@ -58,14 +58,24 @@ this module only needs to fail cleanly and quickly.
 
 from __future__ import annotations
 
+import logging
 import os
 from dataclasses import dataclass
 from typing import Optional, TypedDict
 
+import httpx
 from google import genai
 from google.genai import errors, types
 
 from companion.corpus import CorpusMatch
+
+# Errors are logged here with full technical detail (exception text, status
+# codes) so they're available for debugging in the companion's own log file
+# (see install.sh's StandardErrorPath), while the `{"error": "..."}" shape
+# returned to callers stays a short, calm, user-facing message - the two
+# audiences need different amounts of detail, and a raw exception string
+# has no business ending up rendered in the on-page overlay.
+logger = logging.getLogger(__name__)
 
 # Gemini's free tier covers Flash models with generous rate limits - see
 # module docstring for why this replaced Claude/Haiku. Configurable via env
@@ -240,7 +250,8 @@ def get_verdict(
     try:
         active_client = client if client is not None else genai.Client()
     except Exception as e:  # noqa: BLE001 - e.g. no API key resolvable at all
-        return {"error": f"could not create Gemini client: {e}"}
+        logger.error("could not create Gemini client: %s", e)
+        return {"error": "Groundhog isn't configured correctly."}
 
     user_message = _build_user_message(new_video, matches)
 
@@ -255,17 +266,25 @@ def get_verdict(
                 http_options=types.HttpOptions(timeout=int(timeout * 1000)),
             ),
         )
+    except httpx.TimeoutException as e:
+        logger.error("Gemini call timed out after %ss: %s", timeout, e)
+        return {"error": "Groundhog took too long to respond."}
     except errors.ClientError as e:
-        return {"error": f"Gemini API client error ({e.code}): {e.message}"}
+        logger.error("Gemini API client error (%s): %s", e.code, e.message)
+        return {"error": "Couldn't reach the verdict service."}
     except errors.ServerError as e:
-        return {"error": f"Gemini API server error ({e.code}): {e.message}"}
+        logger.error("Gemini API server error (%s): %s", e.code, e.message)
+        return {"error": "Couldn't reach the verdict service."}
     except errors.APIError as e:
-        return {"error": f"Gemini API error ({e.code}): {e.message}"}
-    except Exception as e:  # noqa: BLE001 - e.g. timeout/connection failure from the transport
-        return {"error": f"Gemini call failed: {e}"}
+        logger.error("Gemini API error (%s): %s", e.code, e.message)
+        return {"error": "Couldn't reach the verdict service."}
+    except Exception as e:  # noqa: BLE001 - e.g. a connection failure from the transport
+        logger.error("Gemini call failed: %s", e)
+        return {"error": "Couldn't reach the verdict service."}
 
     if not response.parsed:
-        return {"error": "Gemini did not return a parseable verdict"}
+        logger.error("Gemini did not return a parseable verdict: %r", response)
+        return {"error": "Couldn't reach the verdict service."}
 
     data = response.parsed
     return {

@@ -45,8 +45,26 @@ function handleNavigation() {
   }
   lastPostedVideoId = videoId;
 
+  // Show "checking..." immediately, in lockstep with the request firing -
+  // the overlay must not wait for a response to appear at all (issue #8).
+  GroundhogOverlay.reset(videoId);
+
   chrome.runtime.sendMessage({ type: "GROUNDHOG_VIDEO_OPENED", videoId });
 }
+
+/**
+ * background.js's /verdict response (or a synthesized error, e.g. companion
+ * unreachable) comes back here as a runtime message rather than a direct
+ * response to the sendMessage above, because the fetch to the companion
+ * (2-4s+ for transcript retrieval alone, see PLAN.md) happens entirely in
+ * the background worker - see background.js's requestVerdict.
+ */
+chrome.runtime.onMessage.addListener((message) => {
+  if (!message || message.type !== "GROUNDHOG_VERDICT_RESULT") {
+    return;
+  }
+  GroundhogOverlay.setResult(message.videoId, message.result);
+});
 
 /**
  * Handle `timeupdate` events from the page's video element, delegated at

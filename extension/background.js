@@ -11,12 +11,11 @@
 
 const COMPANION_ORIGIN = "http://127.0.0.1:8787";
 
-// TODO(#endpoint): the companion doesn't have a real ingestion endpoint yet
-// as of this issue (#4) - #2/#3/#5 add transcript fetch / corpus / Claude
-// scoring on top of the FastAPI app from #1, which currently only exposes
-// `/health` (unauthenticated) and a placeholder authenticated `/`. This path
-// is a placeholder; update it to match whatever route #2/#3/#5 land with.
-const VIDEO_OPENED_PATH = "/videos/opened";
+// #5's real endpoint (companion/app.py's POST /verdict). Fires once per
+// video-opened event from content.js. `k` and `model` are left out here so
+// the companion applies its own server-side defaults - issue #9 (options
+// page K slider) is what will start passing them explicitly.
+const VERDICT_PATH = "/verdict";
 
 // Fires once per video, when content.js's WatchThresholdTracker crosses the
 // 70%/5-minute watch threshold (issue #7). The companion fetches the
@@ -40,18 +39,26 @@ async function readSecret() {
   return groundhogSecret || null;
 }
 
-async function postVideoOpened(videoId) {
+/**
+ * Call the companion's /verdict endpoint for a video and return either the
+ * verdict object (novelty/execution/depth/explanation/recommendation) or an
+ * `{ error }` shape - the same "always resolves to something the overlay can
+ * render, never throws" contract companion/app.py's endpoint itself follows.
+ * This lets content.js's overlay just branch on `result.error` without
+ * needing try/catch of its own (issue #8: "not crash or hang on an error
+ * response").
+ */
+async function requestVerdict(videoId) {
   const secret = await readSecret();
   if (!secret) {
-    console.warn(
-      "Groundhog: no secret configured in chrome.storage.local (key 'groundhogSecret'); " +
-        "skipping companion request for video " + videoId
-    );
-    return;
+    const message =
+      "no secret configured in chrome.storage.local (key 'groundhogSecret')";
+    console.warn("Groundhog: " + message + "; skipping verdict request for video " + videoId);
+    return { error: message };
   }
 
   try {
-    const response = await fetch(COMPANION_ORIGIN + VIDEO_OPENED_PATH, {
+    const response = await fetch(COMPANION_ORIGIN + VERDICT_PATH, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -63,12 +70,20 @@ async function postVideoOpened(videoId) {
       console.warn(
         "Groundhog: companion responded " + response.status + " for video " + videoId
       );
+      return { error: "companion responded with status " + response.status };
     }
+    // companion/app.py's /verdict always returns 200 with either a verdict
+    // object or { error }, so whatever comes back here is already in the
+    // shape the overlay expects - just pass it through.
+    return await response.json();
   } catch (err) {
-    // The companion may simply not be running - fail quietly rather than
-    // spamming the console on every video open. See issue #10 (graceful
-    // failure / "can't evaluate" badge) for the eventual user-facing story.
-    console.warn("Groundhog: companion request failed", err);
+    // The companion may simply not be running, or the request may have
+    // timed out - fail into an error result the overlay can show, rather
+    // than leaving it stuck on "checking..." forever. A unified "can't
+    // evaluate" badge treatment across all failure modes is issue #10; for
+    // now the overlay just shows this message plainly.
+    console.warn("Groundhog: verdict request failed", err);
+    return { error: "companion request failed: " + (err && err.message ? err.message : String(err)) };
   }
 }
 
@@ -103,12 +118,37 @@ async function postVideoWatched(videoId) {
   }
 }
 
-chrome.runtime.onMessage.addListener((message) => {
+chrome.runtime.onMessage.addListener((message, sender) => {
   if (!message) {
     return;
   }
   if (message.type === "GROUNDHOG_VIDEO_OPENED" && message.videoId) {
-    postVideoOpened(message.videoId);
+    const tabId = sender && sender.tab ? sender.tab.id : null;
+    requestVerdict(message.videoId).then((result) => {
+      if (tabId == null) {
+        // No tab to route the result back to (shouldn't normally happen -
+        // this message only ever comes from the content script, which
+        // always runs in a tab) - nothing more to do.
+        return;
+      }
+      // Routed back as a separate message (rather than a sendResponse to
+      // the original GROUNDHOG_VIDEO_OPENED message) because the fetch above
+      // can take several seconds (transcript retrieval alone is 2-4s, see
+      // PLAN.md) - content.js's overlay is already showing "checking..." by
+      // the time this arrives, driven by GroundhogOverlay.reset() at the
+      // point the request was first fired.
+      chrome.tabs
+        .sendMessage(tabId, {
+          type: "GROUNDHOG_VERDICT_RESULT",
+          videoId: message.videoId,
+          result,
+        })
+        .catch((err) => {
+          // The tab may have navigated away or closed before the verdict
+          // came back - fail quietly, there's nothing left to update.
+          console.warn("Groundhog: could not deliver verdict result to tab", err);
+        });
+    });
   }
   if (message.type === "GROUNDHOG_VIDEO_WATCHED" && message.videoId) {
     postVideoWatched(message.videoId);

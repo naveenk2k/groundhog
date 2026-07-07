@@ -261,7 +261,8 @@ if (typeof module !== "undefined" && module.exports) {
       color: var(--ghog-fg-secondary);
       display: flex;
       align-items: center;
-      gap: 6px;
+      /* No gap: the dots span sits flush against the label text so it
+       * reads as "...history..." with no visible space before the dots. */
     }
     .ghog-dots::after {
       content: "";

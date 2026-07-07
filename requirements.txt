@@ -1,10 +1,14 @@
 # Groundhog companion dependencies.
 #
-# This file is intentionally minimal for now (issue #1: server boots and
-# authenticates over localhost). Later issues add:
-#   - yt-dlp (transcript fetching, #2)
+# This file is intentionally minimal for now. Later issues add:
 #   - sentence-transformers (embeddings, #3)
 #   - sqlite-vec (corpus storage, #3)
 #   - an Anthropic client (scoring, #5)
 fastapi
 uvicorn
+
+# Transcript fetching (#2). Pinned, not hand-rolled HTTP: YouTube's list of
+# PO-token-exempt clients (we use android_vr - see companion/transcript.py)
+# moves over time, and yt-dlp is actively maintained against exactly that
+# churn. See DECISIONS.md "Transcript retrieval".
+yt-dlp==2025.10.14

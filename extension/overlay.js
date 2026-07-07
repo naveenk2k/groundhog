@@ -648,6 +648,40 @@ if (typeof module !== "undefined" && module.exports) {
       state = applyVerdictResult(state, result);
       render();
     },
+    /**
+     * Called from content.js's handleNavigation (issue #11) when a
+     * `yt-navigate-finish` lands on a URL that isn't a watch page at all
+     * (extractVideoId returned null - home, search, a channel page, etc.).
+     * Removes the shadow-DOM host from the page entirely, rather than just
+     * hiding it via `display: none` as dismiss()/collapse already do
+     * in-place, so there's nothing left in the DOM and no button click
+     * listeners left referencing an element no page content still points
+     * to (host.remove() detaches it; dropping the `els`/`shadowRoot`
+     * references here means nothing in this module keeps it alive either,
+     * so it's eligible for GC like any other removed subtree).
+     *
+     * Deliberately does not tear down `window.__groundhogOverlayInstalled`
+     * or the `GroundhogOverlay` object itself - those represent "has this
+     * content-script instance's IIFE run," not "is a host currently in the
+     * DOM," and must survive teardown so a later reset() (for the next real
+     * watch page) can run ensureDom() again and build a fresh host rather
+     * than silently doing nothing because the module thinks it's already
+     * installed.
+     *
+     * Resets `currentVideoId` and `state` too, so if a stale setResult()
+     * for the torn-down video's ID somehow arrives after this runs, it's
+     * ignored (currentVideoId no longer matches) instead of reaching into
+     * a `render()` that would just recreate the host we just removed.
+     */
+    teardown() {
+      currentVideoId = null;
+      state = createOverlayState();
+      if (els && els.host && els.host.parentNode) {
+        els.host.parentNode.removeChild(els.host);
+      }
+      shadowRoot = null;
+      els = null;
+    },
   };
 
   window.GroundhogOverlay = GroundhogOverlay;

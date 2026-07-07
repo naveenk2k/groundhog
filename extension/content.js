@@ -38,6 +38,16 @@ function handleNavigation() {
   watchTracker.reset(videoId);
 
   if (!videoId) {
+    // Navigated away from a watch page entirely (home, search, channel,
+    // etc. - see issue #11). Tear down the overlay so nothing stale (a
+    // verdict, "checking...", a "can't evaluate" badge) lingers on a page
+    // that isn't a watch page anymore, and forget the last-posted video ID:
+    // the dedup below only makes sense while still on a/the same watch
+    // page, so without this, navigating away and back to the *same* video
+    // later would be silently skipped as a no-op and leave the overlay torn
+    // down forever.
+    lastPostedVideoId = null;
+    GroundhogOverlay.teardown();
     return;
   }
   if (videoId === lastPostedVideoId) {

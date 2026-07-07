@@ -2,10 +2,12 @@
 fastapi
 uvicorn
 
-# Claude call (#5): structured tool-use verdicts. Reads ANTHROPIC_API_KEY
-# from the environment the same way the SDK always does - no custom key
-# storage here, see DECISIONS.md "Claude call: prompt content and tunables".
-anthropic
+# Verdict call (#5): structured-output judgments. Reads GEMINI_API_KEY from
+# the environment the same way the SDK always does - no custom key storage
+# here. Originally built against Claude/Anthropic, swapped to Gemini since
+# Claude has no free tier - see DECISIONS.md "Claude call: prompt content
+# and tunables" and companion/verdict.py's module docstring.
+google-genai
 
 # Transcript fetching (#2). Pinned, not hand-rolled HTTP: YouTube's list of
 # PO-token-exempt clients (we use android_vr - see companion/transcript.py)

@@ -68,10 +68,38 @@ video transcripts without issue and it removes a variable from early tuning.
 K as a slider costs nothing extra to implement (it's just a vector-search
 `LIMIT`) and lets cost/quality be tuned live instead of re-argued later.
 
-**Deferred:** a hard per-day/per-month Claude spend cap (tracked cumulative
-token usage vs. a configurable ceiling, falling back to "can't evaluate" once
+**Deferred:** a hard per-day/per-month spend cap (tracked cumulative token
+usage vs. a configurable ceiling, falling back to "can't evaluate" once
 crossed) is wanted but explicitly deferred past v1 — not blocking initial
 implementation.
+
+## Provider swap: Gemini instead of Claude
+
+**Decision:** `companion/verdict.py` calls Gemini (`google-genai` SDK,
+`gemini-2.5-flash` default), not Claude/Anthropic, swapped wholesale rather
+than kept as a multi-provider abstraction.
+
+**Why:** Claude has no free tier — issue #5 was built and merged against
+Claude first, but the very first real API call hit a "credit balance too
+low" error, and the project owner didn't want to pay for a plan just to
+keep developing. Gemini's free tier covers Flash models with generous rate
+limits, which is enough for a call that fires once per opened video, not in
+a loop. Everything else about the design carries over unchanged: full
+transcripts (not excerpts) for the new video and top-K matches, creator
+labels so the model can distinguish "same channel repeating itself" from
+"different creators converging on a topic," and forced structured output
+(Gemini's `response_schema` + `response_mime_type="application/json"`,
+the equivalent of Claude's forced tool-use) so the response shape is
+guaranteed rather than parsed from free text. Verified live: a real Gemini
+call against a real TEDx-talk transcript and a real UK-road-trip transcript
+already in the corpus correctly scored them as unrelated (novelty 10) with
+grounded reasoning.
+
+Kept as a single swapped implementation, not a provider-selectable
+abstraction, because there's no second provider actually in use right now —
+building a switchable interface for a hypothetical future provider would be
+speculative. If a second real need for Claude (or another provider) shows
+up later, that's the point to introduce an abstraction, not before.
 
 ## Backfill
 

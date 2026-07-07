@@ -3,7 +3,8 @@
 This is the foundation piece (issue #1): boot, health check, and secret-header
 authentication - which, as ASGI middleware, gates every route below
 (except /health) with no extra per-route wiring needed. Transcript fetching
-(#2), corpus storage (#3), and the Claude call (#5) build on top of it.
+(#2), corpus storage (#3), and the verdict call (#5, currently Gemini -
+see companion/verdict.py) build on top of it.
 """
 
 from datetime import datetime, timezone
@@ -67,9 +68,9 @@ class VerdictRequest(BaseModel):
     # Not hardcoded to a fixed 5-10 - a later issue (#9) exposes this as an
     # options-page slider; this endpoint just accepts and passes through
     # whatever K it's given. See DECISIONS.md "Claude call: prompt content
-    # and tunables".
+    # and tunables" (predates the Gemini swap; the reasoning still applies).
     k: int = 5
-    # Overrides the Haiku default (companion/verdict.py) for this one call -
+    # Overrides the default model (companion/verdict.py) for this one call -
     # a future model picker (PLAN.md) would set this per-request.
     model: Optional[str] = None
 
@@ -79,9 +80,9 @@ async def verdict_endpoint(body: VerdictRequest) -> dict:
     """Judge whether a video says anything new, given the rest of the pipeline.
 
     Fetches the video's transcript (#2), embeds it and queries the corpus
-    for its top-K nearest neighbors (#3), then calls Claude for a
+    for its top-K nearest neighbors (#3), then calls an LLM for a
     structured verdict (#5). Always returns 200: a missing transcript, an
-    empty corpus, or a failed/timed-out Claude call all come back as
+    empty corpus, or a failed/timed-out verdict call all come back as
     `{"error": "..."}` rather than a non-2xx status or a hang - consistent
     with how /transcript already treats "can't evaluate" as a normal,
     representable outcome rather than an exception.

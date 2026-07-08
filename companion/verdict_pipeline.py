@@ -134,7 +134,6 @@ def add_watched_video(conn: apsw.Connection, video_id: str) -> WatchedResult:
     if fetched["transcript"] is None:
         return {"added": False, "video_id": video_id, "title": None, "reason": fetched["reason"]}
 
-    embedding = corpus.embed_text(fetched["transcript"])
     corpus.insert_video(
         conn,
         video_id=video_id,
@@ -142,7 +141,6 @@ def add_watched_video(conn: apsw.Connection, video_id: str) -> WatchedResult:
         creator=fetched["creator"] or "",
         watched_at=corpus.now_watched_at(),
         transcript_text=fetched["transcript"],
-        embedding=embedding,
     )
 
     return {"added": True, "video_id": video_id, "title": fetched["title"], "reason": None}

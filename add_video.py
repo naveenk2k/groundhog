@@ -16,10 +16,9 @@ from __future__ import annotations
 
 import re
 import sys
-from datetime import datetime, timezone
 from urllib.parse import parse_qs, urlparse
 
-from companion.corpus import embed_text, get_connection, insert_video
+from companion.corpus import get_connection, insert_video, now_watched_at
 from companion.transcript import fetch_transcript
 
 _BARE_ID_RE = re.compile(r"^[\w-]{11}$")
@@ -55,7 +54,6 @@ def main() -> None:
     title = result["title"] or video_id
     creator = result["creator"] or ""
     print(f"Embedding '{title}' by '{creator or 'unknown creator'}'...")
-    embedding = embed_text(result["transcript"])
 
     conn = get_connection()
     insert_video(
@@ -63,9 +61,8 @@ def main() -> None:
         video_id=video_id,
         title=title,
         creator=creator,
-        watched_at=datetime.now(timezone.utc).isoformat(),
+        watched_at=now_watched_at(),
         transcript_text=result["transcript"],
-        embedding=embedding,
     )
     print(f"Added '{title}' ({video_id}) to the corpus.")
 

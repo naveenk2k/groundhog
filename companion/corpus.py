@@ -210,11 +210,15 @@ def insert_video(
     transcript_text: str,
     embedding: Optional[Sequence[float]] = None,
 ) -> None:
-    """Add a video to the corpus.
+    """Add a video to the corpus - the single embed+insert entry point every
+    caller (companion/verdict_pipeline.py, add_video.py, backfill.py) goes
+    through, rather than each computing its own embedding first.
 
-    `embedding` can be precomputed (e.g. batch backfill reusing one model
-    load across thousands of videos) or omitted, in which case it's computed
-    here from `transcript_text` via the shared embedding model.
+    `embedding` is an optional override (mainly useful for tests that want a
+    specific vector without loading the real model); omitted, it's computed
+    here from `transcript_text` via the shared embedding model - `get_model()`
+    is a lazy-loaded singleton, so this costs nothing extra even across a
+    backfill run inserting thousands of rows.
 
     Re-inserting an existing `video_id` replaces its row (metadata,
     transcript, and embedding) rather than erroring - re-running a fetch for

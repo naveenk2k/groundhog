@@ -154,6 +154,35 @@ class CorpusTest(unittest.TestCase):
         self.assertEqual(top.video_id, video_id)
         self.assertEqual(top.transcript_text, updated_text)
 
+    def test_insert_video_computes_embedding_when_omitted(self):
+        # The single embed+insert entry point every caller (verdict_pipeline,
+        # add_video.py, backfill.py) relies on: no caller should need to
+        # precompute and pass its own embedding (see issue #29).
+        text = "A video about growing tomatoes in a home garden."
+        corpus.insert_video(self.conn, "garden_101", "Growing Tomatoes", "Garden Channel", "2026-01-10T00:00:00Z", text)
+
+        embedding = corpus.embed_text(text)
+        [top] = corpus.query_similar(self.conn, embedding, k=1)
+        self.assertEqual(top.video_id, "garden_101")
+
+    def test_insert_video_uses_explicit_embedding_when_given(self):
+        # An explicit embedding is still honored as-is (useful for tests that
+        # want a specific vector without loading the real model) rather than
+        # always recomputing from transcript_text.
+        fake_embedding = [0.0] * corpus.EMBEDDING_DIMENSIONS
+        fake_embedding[0] = 1.0
+        corpus.insert_video(
+            self.conn,
+            "fake_embedding_video",
+            "Title",
+            "Creator",
+            "2026-01-10T00:00:00Z",
+            "irrelevant text",
+            embedding=fake_embedding,
+        )
+        [top] = corpus.query_similar(self.conn, fake_embedding, k=1)
+        self.assertEqual(top.video_id, "fake_embedding_video")
+
 
 class CorpusMigrationTest(unittest.TestCase):
     """A corpus.db created before the `creator` column existed must keep

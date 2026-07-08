@@ -13,6 +13,7 @@ const assert = require("node:assert/strict");
 const {
   createOverlayState,
   applyVerdictResult,
+  markContextInvalidated,
   setWatchNote,
   clearWatchNote,
   toggleCollapsed,
@@ -88,6 +89,12 @@ test("setWatchNote sets watchNote without touching phase/data/collapsed/dismisse
   assert.equal(next.data, state.data);
   assert.equal(next.collapsed, state.collapsed);
   assert.equal(next.dismissed, state.dismissed);
+});
+
+test("markContextInvalidated moves to phase stale with null data", () => {
+  const next = markContextInvalidated(applyVerdictResult(createOverlayState(), { novelty: 5 }));
+  assert.equal(next.phase, "stale");
+  assert.equal(next.data, null);
 });
 
 test("clearWatchNote resets watchNote to null without touching anything else", () => {

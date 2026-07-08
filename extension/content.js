@@ -27,13 +27,86 @@ let lastPostedVideoId = null;
 // video).
 const watchTracker = new WatchThresholdTracker();
 
+// True once GroundhogOverlay.showContextInvalidated() has been called, so
+// safeSendMessage below doesn't keep re-triggering it (and re-rendering the
+// overlay into the same "stale" state) on every later call in the same
+// dead tab.
+let contextInvalidatedShown = false;
+
+/**
+ * chrome.runtime.id reads as `undefined` once this content script's
+ * extension context has been invalidated (extension reloaded/updated while
+ * this tab was already open) - the same signal chrome.runtime.getManifest()
+ * relies on internally. Checked proactively on every navigation (see
+ * handleNavigation) rather than only reactively after a sendMessage call
+ * actually throws, so the user gets a clear signal as soon as possible.
+ */
+function isExtensionContextValid() {
+  try {
+    return Boolean(chrome.runtime && chrome.runtime.id);
+  } catch (err) {
+    return false;
+  }
+}
+
+/**
+ * chrome.runtime.sendMessage throws synchronously with this exact message
+ * once the extension context is invalidated (confirmed via Chrome's own
+ * documented behavior and widely-reported extension bug threads - it is
+ * not a rejected-promise-only failure mode, so a bare try/catch around the
+ * call is required, not just a .catch()).
+ */
+function isContextInvalidatedError(err) {
+  return Boolean(err && typeof err.message === "string" && err.message.includes("Extension context invalidated"));
+}
+
+function showContextInvalidatedOnce() {
+  if (contextInvalidatedShown) {
+    return;
+  }
+  contextInvalidatedShown = true;
+  GroundhogOverlay.showContextInvalidated();
+}
+
+/**
+ * Wraps every chrome.runtime.sendMessage call in this file so a stale tab
+ * (see isExtensionContextValid above) surfaces a clear, calm "needs a
+ * refresh" overlay state instead of an uncaught "Extension context
+ * invalidated" console error and a silently-stuck request. Safe to call
+ * exactly like chrome.runtime.sendMessage itself - callers that don't care
+ * about the result (fire-and-forget messages) can ignore the return value.
+ */
+function safeSendMessage(message) {
+  if (!isExtensionContextValid()) {
+    showContextInvalidatedOnce();
+    return;
+  }
+  try {
+    const result = chrome.runtime.sendMessage(message);
+    if (result && typeof result.catch === "function") {
+      result.catch((err) => {
+        if (isContextInvalidatedError(err)) {
+          showContextInvalidatedOnce();
+        }
+      });
+    }
+    return result;
+  } catch (err) {
+    if (isContextInvalidatedError(err)) {
+      showContextInvalidatedOnce();
+      return;
+    }
+    throw err;
+  }
+}
+
 // Lets the overlay's "Open settings" button (setup-shaped errors only) open
 // the extension's options page without overlay.js needing chrome.* access
 // itself - content scripts may not have every chrome.runtime method
 // background.js does, so this routes through a message to the background
 // worker instead of calling chrome.runtime.openOptionsPage() directly here.
 GroundhogOverlay.onOpenSettingsClick = () => {
-  chrome.runtime.sendMessage({ type: "GROUNDHOG_OPEN_OPTIONS" });
+  safeSendMessage({ type: "GROUNDHOG_OPEN_OPTIONS" });
 };
 
 // Lets the overlay's "Mark as watched" button send the same
@@ -42,7 +115,7 @@ GroundhogOverlay.onOpenSettingsClick = () => {
 // corpus.insert_video upsert-by-video_id behavior don't distinguish who
 // triggered the add, so both paths can safely share one handler.
 GroundhogOverlay.onMarkWatchedClick = (videoId) => {
-  chrome.runtime.sendMessage({ type: "GROUNDHOG_VIDEO_WATCHED", videoId });
+  safeSendMessage({ type: "GROUNDHOG_VIDEO_WATCHED", videoId });
 };
 
 // Lets the overlay's "Retry" button (retry-worthy errors only - see
@@ -52,10 +125,21 @@ GroundhogOverlay.onMarkWatchedClick = (videoId) => {
 // explicit user-initiated retry for the video already on screen.
 GroundhogOverlay.onRetryClick = (videoId) => {
   GroundhogOverlay.reset(videoId);
-  chrome.runtime.sendMessage({ type: "GROUNDHOG_VIDEO_OPENED", videoId });
+  safeSendMessage({ type: "GROUNDHOG_VIDEO_OPENED", videoId });
 };
 
 function handleNavigation() {
+  // Checked proactively here (every SPA navigation), not only reactively
+  // after a sendMessage call throws below - a reload/update can happen at
+  // any time while this tab sits idle on a watch page, and this is the
+  // most frequent hook available to notice it without waiting for the next
+  // watch-threshold crossing, which would otherwise fail to add the video
+  // with no visible cause at all.
+  if (!isExtensionContextValid()) {
+    showContextInvalidatedOnce();
+    return;
+  }
+
   const videoId = extractVideoId(window.location.href);
 
   // Reset watch-threshold tracking for every navigation, even if the video
@@ -83,7 +167,7 @@ function handleNavigation() {
   // the overlay must not wait for a response to appear at all.
   GroundhogOverlay.reset(videoId);
 
-  chrome.runtime.sendMessage({ type: "GROUNDHOG_VIDEO_OPENED", videoId });
+  safeSendMessage({ type: "GROUNDHOG_VIDEO_OPENED", videoId });
 }
 
 /**
@@ -130,7 +214,7 @@ function handleTimeUpdate(event) {
     video.duration
   );
   if (crossedThreshold) {
-    chrome.runtime.sendMessage({ type: "GROUNDHOG_VIDEO_WATCHED", videoId });
+    safeSendMessage({ type: "GROUNDHOG_VIDEO_WATCHED", videoId });
   }
 }
 

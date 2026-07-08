@@ -7,7 +7,7 @@
  *
  * Shape of the state object:
  *   {
- *     phase: "checking" | "verdict" | "error",
+ *     phase: "checking" | "verdict" | "error" | "stale",
  *     data: null | <verdict object from /verdict> | <{ message, code } for phase "error">,
  *     collapsed: boolean,   // true = shown as a small corner badge only
  *     dismissed: boolean,   // true = fully hidden until the next navigation
@@ -67,6 +67,18 @@ function applyVerdictResult(state, result) {
 }
 
 /**
+ * Move to a terminal "stale" phase - the extension's context was
+ * invalidated (e.g. reloaded or updated) while this tab was already open,
+ * so chrome.runtime.sendMessage can no longer reach the background worker
+ * at all. Nothing else in this state machine can recover from this without
+ * an actual page reload - see content.js's isExtensionContextValid/
+ * safeSendMessage, which is what detects this and calls in here.
+ */
+function markContextInvalidated(state) {
+  return { ...state, phase: "stale", data: null };
+}
+
+/**
  * Set (or replace) the transient corpus-add banner - see the state-shape
  * comment above. Does not touch phase/data/collapsed/dismissed: this is
  * strictly a secondary signal layered on top of whatever the verdict check
@@ -95,6 +107,7 @@ if (typeof module !== "undefined" && module.exports) {
   module.exports = {
     createOverlayState,
     applyVerdictResult,
+    markContextInvalidated,
     setWatchNote,
     clearWatchNote,
     toggleCollapsed,

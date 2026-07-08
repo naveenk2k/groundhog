@@ -727,6 +727,48 @@ if (typeof module !== "undefined" && module.exports) {
       return;
     }
 
+    if (state.phase === "stale") {
+      // Terminal state: the extension's context was invalidated (reload/
+      // update) while this tab was already open - nothing in this tab can
+      // reach the background worker anymore, so the only useful action is
+      // an actual page reload (window.location.reload(), not a chrome.*
+      // call - see content.js's isExtensionContextValid). Reuses the same
+      // muted "can't evaluate" visual language rather than inventing a new
+      // one, since it's the same "we can't tell you anything right now"
+      // shape of message.
+      const wrap = document.createElement("div");
+      wrap.className = "ghog-cant-evaluate";
+
+      const icon = document.createElement("div");
+      icon.className = "ghog-cant-evaluate-icon";
+      icon.setAttribute("aria-hidden", "true");
+      icon.textContent = "!";
+      wrap.appendChild(icon);
+
+      const text = document.createElement("div");
+      text.className = "ghog-cant-evaluate-text";
+
+      const label = document.createElement("div");
+      label.className = "ghog-cant-evaluate-label";
+      label.textContent = "Groundhog needs a refresh";
+      text.appendChild(label);
+
+      const reason = document.createElement("div");
+      reason.className = "ghog-cant-evaluate-reason";
+      reason.textContent = "The extension was updated - reload this page to keep checking videos.";
+      text.appendChild(reason);
+
+      const action = document.createElement("button");
+      action.className = "ghog-cant-evaluate-action";
+      action.textContent = "Reload page";
+      action.addEventListener("click", () => window.location.reload());
+      text.appendChild(action);
+
+      wrap.appendChild(text);
+      body.appendChild(wrap);
+      return;
+    }
+
     if (state.phase === "error") {
       // Neutral "can't evaluate" badge: same treatment no matter which
       // failure source produced it (no transcript, companion
@@ -883,6 +925,13 @@ if (typeof module !== "undefined" && module.exports) {
    * reset by it.
    */
   function renderFooter() {
+    // Nothing in the footer (mark-as-watched, corpus-add note) can do
+    // anything useful once the extension context is invalidated - every
+    // chrome.runtime.sendMessage it would trigger is already known to fail.
+    els.footer.style.display = state.phase === "stale" ? "none" : "";
+    if (state.phase === "stale") {
+      return;
+    }
     els.watchNote.classList.toggle("ghog-visible", Boolean(state.watchNote));
     if (state.watchNote) {
       els.watchNote.textContent = state.watchNote.message;
@@ -895,6 +944,9 @@ if (typeof module !== "undefined" && module.exports) {
     }
     if (state.phase === "error") {
       return "Groundhog: can't evaluate video";
+    }
+    if (state.phase === "stale") {
+      return "Groundhog: needs a refresh";
     }
     const verdict = state.data || {};
     if (typeof verdict.novelty === "number") {
@@ -932,6 +984,17 @@ if (typeof module !== "undefined" && module.exports) {
      * retry-worthy error (see isRetryableError above).
      */
     onRetryClick: null,
+    /**
+     * Called by content.js (see isExtensionContextValid/safeSendMessage)
+     * the first time a chrome.runtime call fails because the extension's
+     * context was invalidated - e.g. the extension got reloaded/updated
+     * while this tab was already open. Moves to the terminal "stale" phase;
+     * nothing recovers from this short of an actual page reload.
+     */
+    showContextInvalidated() {
+      state = markContextInvalidated(state);
+      render();
+    },
     /** Called on every fresh video-opened request - see content.js. Always starts un-collapsed, un-dismissed, showing "checking...". */
     reset(videoId) {
       currentVideoId = videoId;

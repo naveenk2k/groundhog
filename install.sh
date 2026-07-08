@@ -23,26 +23,61 @@ LABEL="com.groundhog.companion"
 PLIST_PATH="$HOME/Library/LaunchAgents/$LABEL.plist"
 LOG_DIR="$REPO_ROOT/.logs"
 
-echo "==> Setting up Python venv at $VENV_DIR"
-python3 -m venv "$VENV_DIR"
-"$VENV_DIR/bin/pip" install --upgrade pip >/dev/null
-"$VENV_DIR/bin/pip" install -r "$REPO_ROOT/requirements.txt"
+# Picks which `python3` binary to build the venv with.
+#
+# Prefer Homebrew/python.org Python over Apple's system Python: Apple's
+# system SQLite lacks loadable-extension support that sqlite-vec needs (see
+# companion/corpus.py's module docstring for the full story on why that
+# matters). A bare `python3 -m venv` would pick up whichever python3 is
+# first on PATH, which is Apple's system one unless Homebrew/python.org
+# Python happens to come first.
+#
+# Preference order: Homebrew (Apple Silicon), Homebrew (Intel), python.org,
+# then whatever `python3` resolves to on PATH (today's exact behavior, kept
+# as the fallback).
+select_python() {
+  local candidate
+  for candidate in \
+    /opt/homebrew/bin/python3 \
+    /usr/local/bin/python3 \
+    /Library/Frameworks/Python.framework/Versions/Current/bin/python3
+  do
+    if [[ -x "$candidate" ]]; then
+      echo "$candidate"
+      return 0
+    fi
+  done
+  echo "python3"
+}
 
-if [[ -f "$SECRET_FILE" ]]; then
-  echo "==> Secret already exists at $SECRET_FILE, leaving it untouched"
-else
-  echo "==> Generating a new shared secret at $SECRET_FILE"
-  # 32 bytes of randomness, hex-encoded. Read-only for the owner - this is
-  # what gates every request the extension makes, so treat it like a key.
-  openssl rand -hex 32 > "$SECRET_FILE"
-  chmod 600 "$SECRET_FILE"
-fi
+# Writes the launchd plist for the companion service to $1.
+#
+# $2, if given, is a newline-separated list of KEY=VALUE pairs to inject
+# into the plist as an EnvironmentVariables dict (e.g. $'FOO=bar\nBAZ=qux').
+# Today no caller passes anything here, so no EnvironmentVariables key is
+# written and GEMINI_API_KEY still doesn't reach the launchd-spawned
+# process - fixing that means deciding where the key comes from (a .env
+# file? the installer's own shell environment?) and then threading a real
+# KEY=VALUE list through this same parameter.
+write_launchd_plist() {
+  local plist_path="$1"
+  local env_pairs="${2:-}"
+  local env_vars_xml=""
 
-mkdir -p "$LOG_DIR"
+  if [[ -n "$env_pairs" ]]; then
+    env_vars_xml+="    <key>EnvironmentVariables</key>"$'\n'
+    env_vars_xml+="    <dict>"$'\n'
+    while IFS= read -r pair; do
+      [[ -z "$pair" ]] && continue
+      local key="${pair%%=*}"
+      local value="${pair#*=}"
+      env_vars_xml+="        <key>$key</key>"$'\n'
+      env_vars_xml+="        <string>$value</string>"$'\n'
+    done <<< "$env_pairs"
+    env_vars_xml+="    </dict>"$'\n'
+  fi
 
-echo "==> Writing launchd plist to $PLIST_PATH"
-mkdir -p "$HOME/Library/LaunchAgents"
-cat > "$PLIST_PATH" <<PLIST
+  cat > "$plist_path" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -64,13 +99,37 @@ cat > "$PLIST_PATH" <<PLIST
     <true/>
     <key>KeepAlive</key>
     <true/>
-    <key>StandardOutPath</key>
+${env_vars_xml}    <key>StandardOutPath</key>
     <string>$LOG_DIR/companion.log</string>
     <key>StandardErrorPath</key>
     <string>$LOG_DIR/companion.error.log</string>
 </dict>
 </plist>
 PLIST
+}
+
+echo "==> Setting up Python venv at $VENV_DIR"
+PYTHON_BIN="$(select_python)"
+"$PYTHON_BIN" -m venv "$VENV_DIR"
+"$VENV_DIR/bin/pip" install --upgrade pip >/dev/null
+"$VENV_DIR/bin/pip" install -r "$REPO_ROOT/requirements.txt"
+
+if [[ -f "$SECRET_FILE" ]]; then
+  echo "==> Secret already exists at $SECRET_FILE, leaving it untouched"
+else
+  echo "==> Generating a new shared secret at $SECRET_FILE"
+  # 32 bytes of randomness, hex-encoded. Read-only for the owner - this is
+  # what gates every request the extension makes, so treat it like a key.
+  openssl rand -hex 32 > "$SECRET_FILE"
+  chmod 600 "$SECRET_FILE"
+fi
+
+mkdir -p "$LOG_DIR"
+
+echo "==> Writing launchd plist to $PLIST_PATH"
+mkdir -p "$HOME/Library/LaunchAgents"
+# No env vars to inject yet - see write_launchd_plist's comment above.
+write_launchd_plist "$PLIST_PATH"
 
 echo "==> Registering and starting the launchd service"
 # Unload first in case it's already registered from a previous install, so

@@ -1,4 +1,4 @@
-"""Tests for companion/verdict.py's get_verdict error mapping (issue #26).
+"""Tests for companion/verdict.py's get_verdict error mapping.
 
 Uses a fake genai.Client (the injection point get_verdict already supports)
 so no real Gemini API calls happen. Covers: successful verdicts, Gemini's

@@ -157,7 +157,7 @@ class CorpusTest(unittest.TestCase):
     def test_insert_video_computes_embedding_when_omitted(self):
         # The single embed+insert entry point every caller (verdict_pipeline,
         # add_video.py, backfill.py) relies on: no caller should need to
-        # precompute and pass its own embedding (see issue #29).
+        # precompute and pass its own embedding.
         text = "A video about growing tomatoes in a home garden."
         corpus.insert_video(self.conn, "garden_101", "Growing Tomatoes", "Garden Channel", "2026-01-10T00:00:00Z", text)
 
@@ -298,7 +298,7 @@ class GetModelOfflineFallbackTest(unittest.TestCase):
 class WatchedAtFormattingTest(unittest.TestCase):
     """Both write paths (verdict_pipeline.py's live path via now_watched_at,
     backfill.py's Takeout-import path via normalize_watched_at) must produce
-    the same canonical shape - see issue #36."""
+    the same canonical shape."""
 
     def test_now_watched_at_matches_canonical_shape(self):
         value = corpus.now_watched_at()

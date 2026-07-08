@@ -38,7 +38,7 @@ from companion.verdict_pipeline import add_watched_video, run_verdict_pipeline
 # added in verdict_pipeline.py cover most of the actual debugging value
 # (answering "did this video's request reach the companion?"), and wiring
 # custom uvicorn log config through the launchd CLI invocation is a
-# separate, install.sh-scoped concern (tracked as issue #32).
+# separate, install.sh-scoped concern.
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
 app = FastAPI(title="Groundhog companion")

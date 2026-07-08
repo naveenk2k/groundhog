@@ -1,4 +1,4 @@
-"""Tests for companion/app.py's CORS preflight handling (issue #23).
+"""Tests for companion/app.py's CORS preflight handling.
 
 Reproduces the actual failure: a browser sends a CORS preflight OPTIONS
 request (no secret header - browsers never attach custom headers to

@@ -7,6 +7,7 @@ companion/verdict_pipeline.py; transcript fetching lives in
 companion/transcript.py and corpus storage in companion/corpus.py.
 """
 
+import logging
 from typing import Optional
 
 from fastapi import FastAPI
@@ -17,6 +18,28 @@ from companion import corpus
 from companion.auth import SecretAuthMiddleware
 from companion.transcript import fetch_transcript
 from companion.verdict_pipeline import add_watched_video, run_verdict_pipeline
+
+# This is the single entry point for the companion process (uvicorn imports
+# this module to get `app`), so it's the one place we can be sure runs
+# before any other module's `logging.getLogger(__name__)` calls emit
+# anything - without this, unconfigured loggers (e.g. verdict.py's,
+# verdict_pipeline.py's) fall through to logging's bare `lastResort`
+# handler, which prints only the raw message with no timestamp, level, or
+# logger name, making .logs/companion.log nearly useless for correlating
+# events.
+#
+# Note: this configures *our own* loggers only. Uvicorn is launched as a
+# bare `uvicorn companion.app:app ...` CLI process (see install.sh's
+# launchd plist), not via a Python entry point calling `uvicorn.run()`, so
+# there's no equally simple place here to also inject a custom
+# `log_config` for uvicorn's own access log (e.g. the timestamp-less
+# `INFO:     127.0.0.1:52437 - "GET /health HTTP/1.1" 200 OK` lines).
+# Deliberately left as-is for now: the video-ID-tagged application logs
+# added in verdict_pipeline.py cover most of the actual debugging value
+# (answering "did this video's request reach the companion?"), and wiring
+# custom uvicorn log config through the launchd CLI invocation is a
+# separate, install.sh-scoped concern (tracked as issue #32).
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
 app = FastAPI(title="Groundhog companion")
 app.add_middleware(SecretAuthMiddleware)

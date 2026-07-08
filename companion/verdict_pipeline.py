@@ -45,6 +45,7 @@ def run_verdict_pipeline(
     `{"error": "..."}` - see companion/verdict.py's module docstring for why
     the LLM call itself never raises.
     """
+    logger.info("verdict requested for video %s", video_id)
     fetched = fetch_transcript(video_id)
     if fetched["transcript"] is None:
         logger.error("no transcript for video %s: %s", video_id, fetched["reason"])
@@ -75,6 +76,7 @@ def add_watched_video(conn: apsw.Connection, video_id: str) -> WatchedResult:
     `corpus.insert_video` already upserts by `video_id`, so calling this
     again for the same video is naturally a no-op duplicate-wise.
     """
+    logger.info("watched-video add requested for video %s", video_id)
     fetched = fetch_transcript(video_id)
     if fetched["transcript"] is None:
         return {"added": False, "video_id": video_id, "title": None, "reason": fetched["reason"]}

@@ -1,26 +1,49 @@
-"""Tests for companion/app.py's CORS preflight handling.
+"""Tests for companion/app.py: CORS preflight handling and the video lookup
+endpoint.
 
-Reproduces the actual failure: a browser sends a CORS preflight OPTIONS
-request (no secret header - browsers never attach custom headers to
-preflights) before the real POST /verdict. Without CORSMiddleware
-answering it first, SecretAuthMiddleware 401s the preflight and the real
-request never gets sent at all.
+The CORS tests reproduce the actual failure: a browser sends a CORS
+preflight OPTIONS request (no secret header - browsers never attach custom
+headers to preflights) before the real POST /verdict. Without
+CORSMiddleware answering it first, SecretAuthMiddleware 401s the preflight
+and the real request never gets sent at all.
 """
 
-import os
 import tempfile
 import unittest
-
-os.environ.setdefault("GROUNDHOG_SECRET_FILE", tempfile.mktemp())
-os.environ.setdefault("GROUNDHOG_CORPUS_DB", tempfile.mktemp(suffix=".sqlite"))
+from pathlib import Path
 
 from starlette.testclient import TestClient
 
+from companion import config as companion_config
 from companion import corpus
-from companion.app import app
-from companion.config import SECRET_FILE, SECRET_HEADER
+from companion.config import SECRET_HEADER
 
-SECRET_FILE.write_text("test-secret")
+# Redirect the secret file and corpus DB to private temp paths by
+# overwriting these modules' own attributes directly, rather than setting
+# GROUNDHOG_SECRET_FILE/GROUNDHOG_CORPUS_DB env vars before importing
+# companion.config and hoping the module picks them up on first import.
+#
+# That env-var approach is import-order dependent: SECRET_FILE/
+# CORPUS_DB_FILE are each computed once, at whatever moment
+# companion.config first gets imported by *any* test module in the same
+# run - not necessarily this file. A previous version of this test relied
+# on that timing and once actually overwrote the real repo
+# .groundhog-secret file, because test_corpus.py happened to import
+# companion.config (via `from companion import corpus`) before this file's
+# env-var override could take effect.
+#
+# Direct attribute assignment works regardless of import order instead:
+# companion.config.read_secret() looks up companion.config.SECRET_FILE by
+# name at call time (not at import time), and companion.corpus.get_connection()
+# looks up its own module's CORPUS_DB_FILE name the same way - so patching
+# these attributes here, before any request in this file ever triggers a
+# read, is always effective no matter which other test module has already
+# imported companion.config/companion.corpus.
+companion_config.SECRET_FILE = Path(tempfile.mktemp())
+companion_config.SECRET_FILE.write_text("test-secret")
+corpus.CORPUS_DB_FILE = Path(tempfile.mktemp(suffix=".sqlite"))
+
+from companion.app import app  # noqa: E402 - must follow the patching above
 
 
 class CorsPreflightTest(unittest.TestCase):

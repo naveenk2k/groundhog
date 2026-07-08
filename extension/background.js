@@ -14,6 +14,11 @@
 // without duplicating the numbers.
 importScripts("options-k.js");
 
+// Shared model default/resolve logic - also used by options.js so the model
+// <select> and the request-building code here agree on the same default and
+// valid tiers without duplicating the strings.
+importScripts("options-model.js");
+
 // Pure response/error -> `{ error }` decision logic for requestVerdict(),
 // pulled out into its own DOM-free/chrome.*-free file so it can be
 // unit-tested directly in Node - see background-classify.js and
@@ -23,8 +28,8 @@ importScripts("background-classify.js");
 const COMPANION_ORIGIN = "http://127.0.0.1:8787";
 
 // companion/app.py's POST /verdict. Fires once per video-opened event from
-// content.js. `model` is left out so the companion applies its own
-// server-side default; a model picker is a later addition (PLAN.md).
+// content.js. `model` is read from the options page's picker (see
+// readModel()/options-model.js) and forwarded on every request.
 const VERDICT_PATH = "/verdict";
 
 // companion/app.py's POST /videos/watched. Fires once per video, when
@@ -55,6 +60,15 @@ async function readK() {
   return clampK(groundhogK);
 }
 
+// Falls back to DEFAULT_MODEL (options-model.js) if it's never been set -
+// e.g. the very first run before the user has ever opened the options page -
+// which matches companion/verdict.py's own hardcoded default, so behavior is
+// identical whether or not the options page has been opened yet.
+async function readModel() {
+  const { groundhogModel } = await chrome.storage.local.get("groundhogModel");
+  return resolveModel(groundhogModel);
+}
+
 // User-facing copy for the "no secret yet" case - rendered directly in
 // overlay.js's error body (see overlay-state.js's applyVerdictResult, which
 // takes `result.error` as the display string), so it needs to read as an
@@ -80,6 +94,7 @@ async function requestVerdict(videoId) {
     return { error: NOT_CONFIGURED_MESSAGE, notConfigured: true };
   }
   const k = await readK();
+  const model = await readModel();
 
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), VERDICT_TIMEOUT_MS);
@@ -91,7 +106,7 @@ async function requestVerdict(videoId) {
         "Content-Type": "application/json",
         [SECRET_HEADER]: secret,
       },
-      body: JSON.stringify({ video_id: videoId, k }),
+      body: JSON.stringify({ video_id: videoId, k, model }),
       signal: controller.signal,
     });
     const responseError = classifyVerdictResponse(response);

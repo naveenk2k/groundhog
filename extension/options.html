@@ -53,6 +53,15 @@
         border: 1px solid #ccc;
         border-radius: 6px;
       }
+      select {
+        width: 100%;
+        box-sizing: border-box;
+        padding: 6px 8px;
+        font-size: 13px;
+        border: 1px solid #ccc;
+        border-radius: 6px;
+        background: #fff;
+      }
       .k-row {
         display: flex;
         align-items: center;
@@ -119,10 +128,24 @@
       </p>
     </div>
 
+    <div class="field">
+      <label for="model">Model</label>
+      <select id="model">
+        <option value="gemini-2.5-flash">Flash (fastest, default)</option>
+        <option value="gemini-2.5-flash-lite">Flash Lite (fastest, lighter)</option>
+        <option value="gemini-2.5-pro">Pro (slower, more thorough)</option>
+      </select>
+      <p class="hint">
+        Which Gemini model checks each video. Pro is more thorough but
+        slower and more expensive; Flash Lite is the cheapest and fastest.
+      </p>
+    </div>
+
     <button id="save">Save</button>
     <span id="status" hidden>Saved</span>
 
     <script src="options-k.js"></script>
+    <script src="options-model.js"></script>
     <script src="options.js"></script>
   </body>
 </html>

@@ -21,11 +21,17 @@ class VerdictPipelineTest(unittest.TestCase):
         os.close(fd)
         os.remove(self.db_path)  # let apsw create it fresh
         self.conn = corpus.get_connection(self.db_path)
+        # The transcript cache is module-level state shared across tests -
+        # save/clear it here so cached results from one test can't leak into
+        # another, then restore whatever was there (normally nothing).
+        self._saved_transcript_cache = verdict_pipeline._transcript_cache
+        verdict_pipeline._transcript_cache = {}
 
     def tearDown(self):
         self.conn.close()
         if os.path.exists(self.db_path):
             os.remove(self.db_path)
+        verdict_pipeline._transcript_cache = self._saved_transcript_cache
 
     @patch("companion.verdict_pipeline.verdict.get_verdict")
     @patch("companion.verdict_pipeline.fetch_transcript")
@@ -136,6 +142,57 @@ class VerdictPipelineTest(unittest.TestCase):
         )
         count = self.conn.execute("SELECT COUNT(*) FROM videos").fetchone()[0]
         self.assertEqual(count, 0)
+
+
+    @patch("companion.verdict_pipeline.verdict.get_verdict")
+    @patch("companion.verdict_pipeline.fetch_transcript")
+    def test_verdict_then_watched_for_same_video_fetches_transcript_once(self, mock_fetch, mock_get_verdict):
+        mock_fetch.return_value = {
+            "transcript": "a transcript about bread baking",
+            "title": "Bread Baking",
+            "creator": "Bread Channel",
+            "reason": None,
+        }
+        mock_get_verdict.return_value = {
+            "novelty": 7,
+            "execution": 8,
+            "depth": 6,
+            "explanation": "explanation",
+            "recommendation": "watch it",
+        }
+
+        verdict_pipeline.run_verdict_pipeline(self.conn, "vid123", k=3)
+        result = verdict_pipeline.add_watched_video(self.conn, "vid123")
+
+        self.assertEqual(result["added"], True)
+        mock_fetch.assert_called_once_with("vid123")
+
+    @patch("companion.verdict_pipeline.verdict.get_verdict")
+    @patch("companion.verdict_pipeline.fetch_transcript")
+    def test_different_video_ids_each_trigger_own_fetch(self, mock_fetch, mock_get_verdict):
+        def fake_fetch(video_id):
+            return {
+                "transcript": f"transcript for {video_id}",
+                "title": f"Title {video_id}",
+                "creator": "Some Creator",
+                "reason": None,
+            }
+
+        mock_fetch.side_effect = fake_fetch
+        mock_get_verdict.return_value = {
+            "novelty": 7,
+            "execution": 8,
+            "depth": 6,
+            "explanation": "explanation",
+            "recommendation": "watch it",
+        }
+
+        verdict_pipeline.run_verdict_pipeline(self.conn, "vid123", k=3)
+        verdict_pipeline.run_verdict_pipeline(self.conn, "vid456", k=3)
+
+        self.assertEqual(mock_fetch.call_count, 2)
+        mock_fetch.assert_any_call("vid123")
+        mock_fetch.assert_any_call("vid456")
 
 
 if __name__ == "__main__":

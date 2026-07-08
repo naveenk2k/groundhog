@@ -11,12 +11,13 @@ the result.
 from __future__ import annotations
 
 import logging
+import time
 from typing import Optional, TypedDict
 
 import apsw
 
 from companion import corpus, verdict
-from companion.transcript import fetch_transcript
+from companion.transcript import TranscriptResult, fetch_transcript
 from companion.verdict import Verdict, VerdictErrorResult
 
 logger = logging.getLogger(__name__)
@@ -27,6 +28,59 @@ class WatchedResult(TypedDict):
     video_id: str
     title: Optional[str]
     reason: Optional[str]
+
+
+# Dedupe the two independent `fetch_transcript` calls (one from `/verdict`
+# when the video opens, one from `/videos/watched` a few minutes later once
+# the watch threshold is crossed) that the common open->watch path makes for
+# the *same* video ID. Each fetch is a real cost (2-4s, three sequential
+# HTTPS round trips - see transcript.py's module docstring) and a second,
+# unnecessary chance at a transient failure for a video already fetched
+# successfully once - so within a short TTL window, the second call reuses
+# the first result instead of re-fetching.
+#
+# A 10-minute TTL comfortably covers the realistic open-to-watch-threshold
+# gap without serving meaningfully stale data if the same video is opened
+# again much later - though staleness barely matters anyway, since a
+# video's transcript doesn't change after publication. The 50-entry cap
+# (oldest evicted first) exists purely so the cache can't grow unbounded
+# over a long-running companion process; TTL alone would already bound it
+# in practice, but a hard cap is cheap insurance against a burst of
+# distinct video IDs within one TTL window.
+#
+# A failed fetch (no transcript available) is cached too: a "no captions"/
+# "deleted video" outcome is generally stable, and there's no reason to
+# force yt-dlp through the same three-round-trip failure twice in a row for
+# a video that just failed - see add_watched_video's docstring for the
+# related point that a missing transcript is a normal, expected outcome,
+# not the kind of transient error you'd want to retry quickly.
+_TRANSCRIPT_CACHE_TTL_SECONDS = 10 * 60
+_TRANSCRIPT_CACHE_MAX_ENTRIES = 50
+_transcript_cache: dict[str, tuple[float, TranscriptResult]] = {}
+
+
+def _cached_fetch_transcript(video_id: str) -> TranscriptResult:
+    """Fetch `video_id`'s transcript, reusing a recent result if one exists.
+
+    See the module-level `_transcript_cache*` constants above for the TTL,
+    size cap, and failure-caching rationale.
+    """
+    now = time.monotonic()
+    cached = _transcript_cache.get(video_id)
+    if cached is not None:
+        cached_at, result = cached
+        if now - cached_at < _TRANSCRIPT_CACHE_TTL_SECONDS:
+            return result
+        del _transcript_cache[video_id]
+
+    result = fetch_transcript(video_id)
+
+    if len(_transcript_cache) >= _TRANSCRIPT_CACHE_MAX_ENTRIES:
+        oldest_video_id = min(_transcript_cache, key=lambda vid: _transcript_cache[vid][0])
+        del _transcript_cache[oldest_video_id]
+    _transcript_cache[video_id] = (now, result)
+
+    return result
 
 
 def run_verdict_pipeline(
@@ -45,7 +99,7 @@ def run_verdict_pipeline(
     the LLM call itself never raises.
     """
     logger.info("verdict requested for video %s", video_id)
-    fetched = fetch_transcript(video_id)
+    fetched = _cached_fetch_transcript(video_id)
     if fetched["transcript"] is None:
         logger.error("no transcript for video %s: %s", video_id, fetched["reason"])
         return {"error": "No transcript available for this video."}
@@ -76,7 +130,7 @@ def add_watched_video(conn: apsw.Connection, video_id: str) -> WatchedResult:
     again for the same video is naturally a no-op duplicate-wise.
     """
     logger.info("watched-video add requested for video %s", video_id)
-    fetched = fetch_transcript(video_id)
+    fetched = _cached_fetch_transcript(video_id)
     if fetched["transcript"] is None:
         return {"added": False, "video_id": video_id, "title": None, "reason": fetched["reason"]}
 

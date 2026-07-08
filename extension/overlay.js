@@ -342,7 +342,9 @@ if (typeof module !== "undefined" && module.exports) {
       gap: 6px;
     }
     .ghog-score-label {
-      width: 52px;
+      /* 64px, not 52px: "EXECUTION" is the longest of the three labels and
+       * was overflowing the old width, butting up against the score bar. */
+      width: 64px;
       flex-shrink: 0;
       font-size: 10px;
       text-transform: uppercase;

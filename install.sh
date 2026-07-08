@@ -19,6 +19,7 @@ fi
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 VENV_DIR="$REPO_ROOT/.venv"
 SECRET_FILE="$REPO_ROOT/.groundhog-secret"
+ENV_FILE="$REPO_ROOT/.env"
 LABEL="com.groundhog.companion"
 PLIST_PATH="$HOME/Library/LaunchAgents/$LABEL.plist"
 LOG_DIR="$REPO_ROOT/.logs"
@@ -33,8 +34,9 @@ LOG_DIR="$REPO_ROOT/.logs"
 # Python happens to come first.
 #
 # Preference order: Homebrew (Apple Silicon), Homebrew (Intel), python.org,
-# then whatever `python3` resolves to on PATH (today's exact behavior, kept
-# as the fallback).
+# then whatever `python3` resolves to on PATH - unless that's specifically
+# Apple's system Python, in which case we refuse rather than silently
+# building the venv on it (see below).
 select_python() {
   local candidate
   for candidate in \
@@ -47,18 +49,29 @@ select_python() {
       return 0
     fi
   done
-  echo "python3"
+
+  # No Homebrew/python.org Python found. Fall back to whatever `python3`
+  # resolves to on PATH - but if that's specifically Apple's system Python
+  # (/usr/bin/python3), refuse: it's EOL, linked against an ancient LibreSSL,
+  # and its SQLite lacks loadable-extension support (see companion/corpus.py).
+  # Anything else on PATH (pyenv, asdf, etc.) is a reasonable python3 and is
+  # allowed through unchanged - this is not a version check.
+  local resolved
+  resolved="$(command -v python3 || true)"
+  if [[ -z "$resolved" || "$resolved" == "/usr/bin/python3" ]]; then
+    echo "No modern Python found - install one first: brew install python@3.12" >&2
+    exit 1
+  fi
+  echo "$resolved"
 }
 
 # Writes the launchd plist for the companion service to $1.
 #
 # $2, if given, is a newline-separated list of KEY=VALUE pairs to inject
 # into the plist as an EnvironmentVariables dict (e.g. $'FOO=bar\nBAZ=qux').
-# Today no caller passes anything here, so no EnvironmentVariables key is
-# written and GEMINI_API_KEY still doesn't reach the launchd-spawned
-# process - fixing that means deciding where the key comes from (a .env
-# file? the installer's own shell environment?) and then threading a real
-# KEY=VALUE list through this same parameter.
+# Called with GEMINI_API_KEY=... below (see resolve_gemini_api_key), so the
+# launchd-spawned companion process has it from the moment launchd starts
+# it, with no separate `launchctl setenv` step required.
 write_launchd_plist() {
   local plist_path="$1"
   local env_pairs="${2:-}"
@@ -108,6 +121,47 @@ ${env_vars_xml}    <key>StandardOutPath</key>
 PLIST
 }
 
+# Resolves the Gemini API key to inject into the launchd plist's
+# EnvironmentVariables (companion/verdict.py's genai.Client() reads it
+# straight from the process environment, so it has to actually be in the
+# plist, not just in the shell that ran this script).
+#
+# Preference order: already exported in the installer's own shell env, then
+# a GEMINI_API_KEY=... line in the gitignored .env file at the repo root,
+# then an interactive prompt - which persists the answer to .env so future
+# re-runs of install.sh don't ask again. If none of those yield a key (e.g.
+# a non-interactive run with no .env), print a warning and continue without
+# one rather than blocking install on it.
+resolve_gemini_api_key() {
+  if [[ -n "${GEMINI_API_KEY:-}" ]]; then
+    echo "$GEMINI_API_KEY"
+    return 0
+  fi
+
+  if [[ -f "$ENV_FILE" ]]; then
+    local existing
+    existing="$(grep -m1 '^GEMINI_API_KEY=' "$ENV_FILE" 2>/dev/null | cut -d= -f2-)"
+    if [[ -n "$existing" ]]; then
+      echo "$existing"
+      return 0
+    fi
+  fi
+
+  local entered=""
+  read -r -p "Enter your Gemini API key (saved to $ENV_FILE for future runs, leave blank to skip): " entered || true
+  if [[ -z "$entered" ]]; then
+    echo "==> No Gemini API key provided - /verdict calls will fail until GEMINI_API_KEY is set (add it to $ENV_FILE and re-run install.sh)." >&2
+    return 0
+  fi
+
+  echo "GEMINI_API_KEY=$entered" >> "$ENV_FILE"
+  chmod 600 "$ENV_FILE"
+  echo "$entered"
+}
+
+echo "==> Resolving Gemini API key"
+GEMINI_API_KEY_VALUE="$(resolve_gemini_api_key)"
+
 echo "==> Setting up Python venv at $VENV_DIR"
 PYTHON_BIN="$(select_python)"
 "$PYTHON_BIN" -m venv "$VENV_DIR"
@@ -128,8 +182,11 @@ mkdir -p "$LOG_DIR"
 
 echo "==> Writing launchd plist to $PLIST_PATH"
 mkdir -p "$HOME/Library/LaunchAgents"
-# No env vars to inject yet - see write_launchd_plist's comment above.
-write_launchd_plist "$PLIST_PATH"
+ENV_PAIRS=""
+if [[ -n "$GEMINI_API_KEY_VALUE" ]]; then
+  ENV_PAIRS="GEMINI_API_KEY=$GEMINI_API_KEY_VALUE"
+fi
+write_launchd_plist "$PLIST_PATH" "$ENV_PAIRS"
 
 echo "==> Registering and starting the launchd service"
 # Unload first in case it's already registered from a previous install, so

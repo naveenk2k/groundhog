@@ -181,9 +181,19 @@ chrome.runtime.onMessage.addListener((message, sender) => {
     const tabId = sender && sender.tab ? sender.tab.id : null;
     requestVerdict(message.videoId).then((result) => {
       if (tabId == null) {
-        // No tab to route the result back to (shouldn't normally happen -
-        // this message only ever comes from the content script, which
-        // always runs in a tab) - nothing more to do.
+        // No tab to route the result back to. This message only ever comes
+        // from the content script (which always runs in a tab), so sender.tab
+        // should always be present per the WebExtensions spec - but if a
+        // browser's implementation ever fails to populate it, the result
+        // (including a perfectly good verdict/error the companion already
+        // computed) would otherwise vanish here with zero trace, leaving the
+        // overlay stuck on "checking..." forever with no visible cause. Log
+        // it loudly rather than silently dropping it, so this is at least
+        // diagnosable if it ever happens.
+        console.error(
+          "Groundhog: no sender.tab on GROUNDHOG_VIDEO_OPENED for video " +
+            message.videoId + " - cannot deliver result", sender
+        );
         return;
       }
       // Routed back as a separate message (rather than a sendResponse to

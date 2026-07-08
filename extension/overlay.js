@@ -1,14 +1,16 @@
 /**
  * On-page overlay: the actual DOM/rendering half. Uses the pure state
  * machine in overlay-state.js (createOverlayState / applyVerdictResult /
- * toggleCollapsed / dismissOverlay) for all state transitions, and only
- * concerns itself with building/injecting/re-rendering the panel.
+ * setWatchNote / clearWatchNote / toggleCollapsed / dismissOverlay) for all
+ * state transitions, and only concerns itself with building/injecting/
+ * re-rendering the panel.
  *
  * Loaded before content.js in manifest.json (after overlay-state.js), so
  * `GroundhogOverlay` is available as a global content.js can call into:
  *
- *   GroundhogOverlay.reset(videoId)        - fresh "checking..." panel
- *   GroundhogOverlay.setResult(videoId, r) - fill in verdict or error
+ *   GroundhogOverlay.reset(videoId)               - fresh "checking..." panel
+ *   GroundhogOverlay.setResult(videoId, r)        - fill in verdict or error
+ *   GroundhogOverlay.setWatchedResult(videoId, r) - corpus-add note (see below)
  *
  * Design notes:
  * - Shadow DOM keeps all CSS below scoped to the overlay - nothing here can
@@ -216,6 +218,33 @@ if (typeof module !== "undefined" && module.exports) {
   let currentVideoId = null;
   let shadowRoot = null;
   let els = null; // cached references into the shadow DOM, set up in ensureDom()
+  let watchNoteTimer = null; // pending auto-fade for state.watchNote, see setWatchedResult
+
+  // How long the corpus-add note (state.watchNote) stays visible before
+  // auto-fading - long enough to read a short sentence, short enough not to
+  // linger like a permanent status line.
+  const WATCH_NOTE_TIMEOUT_MS = 4000;
+
+  /**
+   * Turn a raw POST /videos/watched result (companion/app.py's
+   * `{ added: true, title }` / `{ added: false, reason }`, or one of
+   * background.js's own synthesized reasons for a request that never
+   * reached the companion at all - "not_configured", "companion_error_status",
+   * "companion_unreachable") into the short, calm `{ kind, message }` shape
+   * overlay-state.js's watchNote holds. Deliberately doesn't surface the
+   * companion's raw transcript-failure reason (can be verbose yt-dlp text) -
+   * same "short and calm, never raw exception text" rule classifyOverlayError
+   * follows above.
+   */
+  function describeWatchedResult(result) {
+    if (result && result.added) {
+      return { kind: "success", message: "Added to your watch history." };
+    }
+    if (result && result.reason === "not_configured") {
+      return { kind: "failure", message: "Groundhog isn't set up yet - open the options page." };
+    }
+    return { kind: "failure", message: "Couldn't add this video to your watch history." };
+  }
 
   /**
    * Read YouTube's own dark-mode flag. YouTube sets the boolean attribute
@@ -401,6 +430,46 @@ if (typeof module !== "undefined" && module.exports) {
       line-height: 1.4;
     }
 
+    /* Persistent footer (mark-as-watched button + the corpus-add note) -
+     * shown below whatever renderBody() produces for the current phase,
+     * since both are about the *corpus* rather than the verdict check (see
+     * overlay-state.js's watchNote docs). */
+    .ghog-footer {
+      padding: 0 12px 10px;
+    }
+    .ghog-mark-watched-btn {
+      all: unset;
+      cursor: pointer;
+      display: inline-block;
+      padding: 4px 10px;
+      font-size: 11px;
+      font-weight: 500;
+      color: var(--ghog-fg);
+      border: 1px solid var(--ghog-border);
+      border-radius: 999px;
+    }
+    .ghog-mark-watched-btn:hover {
+      background: var(--ghog-track);
+    }
+    .ghog-mark-watched-btn:disabled {
+      cursor: default;
+      opacity: 0.6;
+    }
+    .ghog-watch-note {
+      margin-top: 6px;
+      font-size: 11px;
+      color: var(--ghog-fg-secondary);
+      line-height: 1.4;
+      opacity: 0;
+      max-height: 0;
+      overflow: hidden;
+      transition: opacity var(--ghog-transition);
+    }
+    .ghog-watch-note.ghog-visible {
+      opacity: 1;
+      max-height: none;
+    }
+
     /* Only shown for setup-shaped errors - "Open settings" is a
      * useless action for e.g. "companion unreachable", so this stays out of
      * the DOM entirely for every other error rather than being hidden via
@@ -570,6 +639,26 @@ if (typeof module !== "undefined" && module.exports) {
     body.className = "ghog-body";
     panel.appendChild(body);
 
+    const footer = document.createElement("div");
+    footer.className = "ghog-footer";
+    panel.appendChild(footer);
+
+    const markWatchedBtn = document.createElement("button");
+    markWatchedBtn.className = "ghog-mark-watched-btn";
+    markWatchedBtn.textContent = "Mark as watched";
+    markWatchedBtn.addEventListener("click", () => {
+      if (typeof GroundhogOverlay.onMarkWatchedClick === "function" && currentVideoId) {
+        GroundhogOverlay.onMarkWatchedClick(currentVideoId);
+      }
+      markWatchedBtn.disabled = true;
+      markWatchedBtn.textContent = "Marking as watched…";
+    });
+    footer.appendChild(markWatchedBtn);
+
+    const watchNote = document.createElement("div");
+    watchNote.className = "ghog-watch-note";
+    footer.appendChild(watchNote);
+
     const badge = document.createElement("div");
     badge.className = "ghog-badge";
     badge.title = "Show Groundhog check";
@@ -579,7 +668,7 @@ if (typeof module !== "undefined" && module.exports) {
     });
     root.appendChild(badge);
 
-    els = { host, root, panel, body, badge };
+    els = { host, root, panel, body, footer, markWatchedBtn, watchNote, badge };
   }
 
   /** Build the body's inner content for the current state. Pure DOM construction, no side effects on `state`. */
@@ -732,8 +821,23 @@ if (typeof module !== "undefined" && module.exports) {
       els.badge.style.display = "none";
       els.panel.style.display = "block";
       renderBody();
+      renderFooter();
       void els.panel.offsetWidth;
       els.panel.classList.add("ghog-visible");
+    }
+  }
+
+  /**
+   * Render the persistent footer (mark-as-watched button + corpus-add
+   * note) - kept separate from renderBody() since both are about the
+   * *corpus* rather than the current verdict phase, and must survive a
+   * phase change (e.g. "checking" -> "verdict") without being wiped out or
+   * reset by it.
+   */
+  function renderFooter() {
+    els.watchNote.classList.toggle("ghog-visible", Boolean(state.watchNote));
+    if (state.watchNote) {
+      els.watchNote.textContent = state.watchNote.message;
     }
   }
 
@@ -762,11 +866,28 @@ if (typeof module !== "undefined" && module.exports) {
      * (shouldn't normally happen - content.js sets this at load time).
      */
     onOpenSettingsClick: null,
+    /**
+     * Set by content.js to a function that posts GROUNDHOG_VIDEO_WATCHED
+     * for the given video ID - the same message the automatic
+     * watch-threshold path already sends, so both share one result path
+     * (background.js's postVideoWatched, reported back as
+     * setWatchedResult below). overlay.js stays chrome.*-free for the same
+     * reason onOpenSettingsClick does.
+     */
+    onMarkWatchedClick: null,
     /** Called on every fresh video-opened request - see content.js. Always starts un-collapsed, un-dismissed, showing "checking...". */
     reset(videoId) {
       currentVideoId = videoId;
       state = createOverlayState();
+      if (watchNoteTimer) {
+        clearTimeout(watchNoteTimer);
+        watchNoteTimer = null;
+      }
       render();
+      if (els) {
+        els.markWatchedBtn.disabled = false;
+        els.markWatchedBtn.textContent = "Mark as watched";
+      }
     },
     /** Called when the background worker's /verdict response (or an error) comes back for `videoId`. Ignored if the user has since navigated to a different video (stale response). */
     setResult(videoId, result) {
@@ -775,6 +896,35 @@ if (typeof module !== "undefined" && module.exports) {
       }
       state = applyVerdictResult(state, result);
       render();
+    },
+    /**
+     * Called when background.js's postVideoWatched result (either the
+     * automatic watch-threshold path or a manual "Mark as watched" click)
+     * comes back for `videoId`. Ignored if the user has since navigated to
+     * a different video. Shows the note for WATCH_NOTE_TIMEOUT_MS, then
+     * auto-clears it - a stray earlier timer is cleared first so two
+     * results arriving close together don't have the first one's timer
+     * wipe out the second one's note early.
+     */
+    setWatchedResult(videoId, result) {
+      if (videoId !== currentVideoId) {
+        return;
+      }
+      if (watchNoteTimer) {
+        clearTimeout(watchNoteTimer);
+        watchNoteTimer = null;
+      }
+      state = setWatchNote(state, describeWatchedResult(result));
+      render();
+      if (els) {
+        els.markWatchedBtn.disabled = false;
+        els.markWatchedBtn.textContent = "Mark as watched";
+      }
+      watchNoteTimer = setTimeout(() => {
+        state = clearWatchNote(state);
+        watchNoteTimer = null;
+        render();
+      }, WATCH_NOTE_TIMEOUT_MS);
     },
     /**
      * Called from content.js's handleNavigation when a `yt-navigate-finish`
@@ -795,6 +945,10 @@ if (typeof module !== "undefined" && module.exports) {
     teardown() {
       currentVideoId = null;
       state = createOverlayState();
+      if (watchNoteTimer) {
+        clearTimeout(watchNoteTimer);
+        watchNoteTimer = null;
+      }
       if (els && els.host && els.host.parentNode) {
         els.host.parentNode.removeChild(els.host);
       }

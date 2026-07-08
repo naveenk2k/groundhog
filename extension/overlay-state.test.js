@@ -13,16 +13,19 @@ const assert = require("node:assert/strict");
 const {
   createOverlayState,
   applyVerdictResult,
+  setWatchNote,
+  clearWatchNote,
   toggleCollapsed,
   dismissOverlay,
 } = require("./overlay-state.js");
 
-test("createOverlayState starts checking, not collapsed, not dismissed", () => {
+test("createOverlayState starts checking, not collapsed, not dismissed, no watch note", () => {
   assert.deepEqual(createOverlayState(), {
     phase: "checking",
     data: null,
     collapsed: false,
     dismissed: false,
+    watchNote: null,
   });
 });
 
@@ -73,4 +76,23 @@ test("dismissOverlay sets dismissed without touching phase/data/collapsed", () =
   assert.equal(next.dismissed, true);
   assert.equal(next.phase, state.phase);
   assert.equal(next.collapsed, state.collapsed);
+});
+
+test("setWatchNote sets watchNote without touching phase/data/collapsed/dismissed", () => {
+  let state = createOverlayState();
+  state = toggleCollapsed(state);
+  const note = { kind: "success", message: "Added to your watch history." };
+  const next = setWatchNote(state, note);
+  assert.equal(next.watchNote, note);
+  assert.equal(next.phase, state.phase);
+  assert.equal(next.data, state.data);
+  assert.equal(next.collapsed, state.collapsed);
+  assert.equal(next.dismissed, state.dismissed);
+});
+
+test("clearWatchNote resets watchNote to null without touching anything else", () => {
+  const state = setWatchNote(createOverlayState(), { kind: "failure", message: "Couldn't add this video." });
+  const next = clearWatchNote(state);
+  assert.equal(next.watchNote, null);
+  assert.equal(next.phase, state.phase);
 });

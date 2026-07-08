@@ -142,6 +142,20 @@ async function requestVerdict(videoId) {
   }
 }
 
+/**
+ * Call the companion's POST /videos/watched for a video and return
+ * `{ added, reason }` - companion/app.py's videos_watched always returns
+ * this shape with a 200 (a missing transcript is a normal "not added"
+ * outcome, not a server error - see that endpoint's docstring), so the only
+ * other case to synthesize a result for here is the request itself failing
+ * (companion not running, no secret configured, a non-2xx status).
+ *
+ * Used both by the automatic watch-threshold path (content.js's
+ * handleTimeUpdate) and the manual "mark as watched" button (overlay.js's
+ * onMarkWatchedClick) - see the GROUNDHOG_VIDEO_WATCHED handler below,
+ * which reports this back to the tab as GROUNDHOG_WATCHED_RESULT either
+ * way, so both paths can show the same corpus-add feedback.
+ */
 async function postVideoWatched(videoId) {
   const secret = await readSecret();
   if (!secret) {
@@ -149,7 +163,7 @@ async function postVideoWatched(videoId) {
       "Groundhog: no secret configured in chrome.storage.local (key 'groundhogSecret'); " +
         "skipping watched-video request for " + videoId
     );
-    return;
+    return { added: false, reason: "not_configured" };
   }
 
   try {
@@ -165,11 +179,16 @@ async function postVideoWatched(videoId) {
       console.warn(
         "Groundhog: companion responded " + response.status + " to watched-video request for " + videoId
       );
+      return { added: false, reason: "companion_error_status" };
     }
+    // { added: true, video_id, title } or { added: false, video_id, reason }
+    // - already the shape the overlay needs, just pass it through.
+    return await response.json();
   } catch (err) {
     // The companion may just not be running - fail quietly rather than
     // spamming the console.
     console.warn("Groundhog: watched-video request failed", err);
+    return { added: false, reason: "companion_unreachable" };
   }
 }
 
@@ -216,7 +235,23 @@ chrome.runtime.onMessage.addListener((message, sender) => {
     });
   }
   if (message.type === "GROUNDHOG_VIDEO_WATCHED" && message.videoId) {
-    postVideoWatched(message.videoId);
+    const tabId = sender && sender.tab ? sender.tab.id : null;
+    postVideoWatched(message.videoId).then((result) => {
+      if (tabId == null) {
+        return;
+      }
+      chrome.tabs
+        .sendMessage(tabId, {
+          type: "GROUNDHOG_WATCHED_RESULT",
+          videoId: message.videoId,
+          result,
+        })
+        .catch((err) => {
+          // Same as GROUNDHOG_VERDICT_RESULT above - the tab may have
+          // navigated away or closed before this came back.
+          console.warn("Groundhog: could not deliver watched result to tab", err);
+        });
+    });
   }
   if (message.type === "GROUNDHOG_OPEN_OPTIONS") {
     // The background worker always has full chrome.runtime access, unlike

@@ -11,6 +11,7 @@
  *     data: null | <verdict object from /verdict> | <{ message, code } for phase "error">,
  *     collapsed: boolean,   // true = shown as a small corner badge only
  *     dismissed: boolean,   // true = fully hidden until the next navigation
+ *     watchNote: null | { kind: "success" | "failure", message: string },
  *   }
  *
  * `code` (phase "error" only) is the machine-readable category alongside
@@ -18,6 +19,17 @@
  * which prefers `code` when present rather than pattern-matching `message`.
  * `code` may be `undefined` for a result that omits it; classifyOverlayError
  * falls back to substring matching on `message` in that case.
+ *
+ * `watchNote` is a separate, transient signal from the corpus-add path
+ * (POST /videos/watched succeeding or failing - either the automatic
+ * watch-threshold add or a manual "mark as watched" click) - deliberately
+ * orthogonal to `phase`/`data`, which are only ever about the *verdict*
+ * check. overlay.js renders it as its own small banner alongside whatever
+ * phase is showing, and clears it on a timer - see overlay.js's
+ * setWatchNote. Kept as an opaque `{ kind, message }` pair here (no
+ * DOM/text-shortening logic) - overlay.js is responsible for turning a raw
+ * /videos/watched result into this shape, same as it already does for
+ * verdict errors via classifyOverlayError.
  *
  * Lifecycle: content.js calls createOverlayState() fresh on every navigation
  * to a video it actually posts "opened" for (see content.js's
@@ -34,7 +46,7 @@
  * companion has responded.
  */
 function createOverlayState() {
-  return { phase: "checking", data: null, collapsed: false, dismissed: false };
+  return { phase: "checking", data: null, collapsed: false, dismissed: false, watchNote: null };
 }
 
 /**
@@ -54,6 +66,21 @@ function applyVerdictResult(state, result) {
   return { ...state, phase: "verdict", data: result };
 }
 
+/**
+ * Set (or replace) the transient corpus-add banner - see the state-shape
+ * comment above. Does not touch phase/data/collapsed/dismissed: this is
+ * strictly a secondary signal layered on top of whatever the verdict check
+ * is currently showing.
+ */
+function setWatchNote(state, note) {
+  return { ...state, watchNote: note };
+}
+
+/** Clear the corpus-add banner, e.g. once overlay.js's auto-fade timer fires. */
+function clearWatchNote(state) {
+  return { ...state, watchNote: null };
+}
+
 /** Flip collapsed <-> expanded. Does not affect dismissed or phase/data. */
 function toggleCollapsed(state) {
   return { ...state, collapsed: !state.collapsed };
@@ -68,6 +95,8 @@ if (typeof module !== "undefined" && module.exports) {
   module.exports = {
     createOverlayState,
     applyVerdictResult,
+    setWatchNote,
+    clearWatchNote,
     toggleCollapsed,
     dismissOverlay,
   };

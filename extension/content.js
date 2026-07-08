@@ -36,6 +36,15 @@ GroundhogOverlay.onOpenSettingsClick = () => {
   chrome.runtime.sendMessage({ type: "GROUNDHOG_OPEN_OPTIONS" });
 };
 
+// Lets the overlay's "Mark as watched" button send the same
+// GROUNDHOG_VIDEO_WATCHED message the automatic watch-threshold path
+// (handleTimeUpdate below) sends - background.js's postVideoWatched and its
+// corpus.insert_video upsert-by-video_id behavior don't distinguish who
+// triggered the add, so both paths can safely share one handler.
+GroundhogOverlay.onMarkWatchedClick = (videoId) => {
+  chrome.runtime.sendMessage({ type: "GROUNDHOG_VIDEO_WATCHED", videoId });
+};
+
 function handleNavigation() {
   const videoId = extractVideoId(window.location.href);
 
@@ -75,10 +84,15 @@ function handleNavigation() {
  * the background worker - see background.js's requestVerdict.
  */
 chrome.runtime.onMessage.addListener((message) => {
-  if (!message || message.type !== "GROUNDHOG_VERDICT_RESULT") {
+  if (!message) {
     return;
   }
-  GroundhogOverlay.setResult(message.videoId, message.result);
+  if (message.type === "GROUNDHOG_VERDICT_RESULT") {
+    GroundhogOverlay.setResult(message.videoId, message.result);
+  }
+  if (message.type === "GROUNDHOG_WATCHED_RESULT") {
+    GroundhogOverlay.setWatchedResult(message.videoId, message.result);
+  }
 });
 
 /**

@@ -17,6 +17,9 @@ const kValueLabel = document.getElementById("k-value");
 const modelInput = document.getElementById("model");
 const saveButton = document.getElementById("save");
 const statusEl = document.getElementById("status");
+const debugLogEl = document.getElementById("debug-log");
+const debugLogRefreshButton = document.getElementById("debug-log-refresh");
+const debugLogClearButton = document.getElementById("debug-log-clear");
 
 /** Populate the form from whatever's currently persisted, defaulting K/model if unset. */
 async function loadForm() {
@@ -61,4 +64,31 @@ async function save() {
 
 saveButton.addEventListener("click", save);
 
+/** Render debug-log.js's breadcrumb entries newest-last, one per line - matches the order they were recorded in. */
+async function renderDebugLog() {
+  const entries = await readDebugLog();
+  if (entries.length === 0) {
+    debugLogEl.textContent = "";
+    const empty = document.createElement("span");
+    empty.id = "debug-log-empty";
+    empty.textContent = "No entries yet.";
+    debugLogEl.appendChild(empty);
+    return;
+  }
+  debugLogEl.textContent = entries
+    .map((entry) => {
+      const time = new Date(entry.t).toLocaleTimeString();
+      const details = entry.details && Object.keys(entry.details).length ? JSON.stringify(entry.details) : "";
+      return time + "  " + entry.event + (details ? "  " + details : "");
+    })
+    .join("\n");
+}
+
+debugLogRefreshButton.addEventListener("click", renderDebugLog);
+debugLogClearButton.addEventListener("click", async () => {
+  await clearDebugLog();
+  await renderDebugLog();
+});
+
 loadForm();
+renderDebugLog();

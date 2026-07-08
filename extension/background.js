@@ -25,6 +25,12 @@ importScripts("options-model.js");
 // background-classify.test.js.
 importScripts("background-classify.js");
 
+// Persisted breadcrumb log (chrome.storage.local, readable from
+// options.html) for diagnosing whether this service worker is being torn
+// down mid-request - see debug-log.js's own docs for why console.log can't
+// be relied on for this.
+importScripts("debug-log.js");
+
 const COMPANION_ORIGIN = "http://127.0.0.1:8787";
 
 // companion/app.py's POST /verdict. Fires once per video-opened event from
@@ -98,6 +104,7 @@ async function requestVerdict(videoId) {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), VERDICT_TIMEOUT_MS);
 
+  await logBreadcrumb("verdict_fetch_start", { videoId });
   try {
     const response = await fetch(COMPANION_ORIGIN + VERDICT_PATH, {
       method: "POST",
@@ -108,6 +115,7 @@ async function requestVerdict(videoId) {
       body: JSON.stringify({ video_id: videoId, k, model }),
       signal: controller.signal,
     });
+    await logBreadcrumb("verdict_fetch_responded", { videoId, status: response.status });
     const responseError = classifyVerdictResponse(response);
     if (responseError) {
       console.error(
@@ -129,12 +137,14 @@ async function requestVerdict(videoId) {
       console.error(
         "Groundhog: verdict request timed out after " + VERDICT_TIMEOUT_MS + "ms for video " + videoId
       );
+      await logBreadcrumb("verdict_fetch_timeout", { videoId });
     } else {
       // The full error (e.g. the browser's raw "Failed to fetch"/NetworkError
       // text) is logged here for debugging, not included in the returned
       // message - that field ends up rendered in the overlay, so it stays a
       // short, calm string rather than leaking raw error text to the user.
       console.error("Groundhog: verdict request failed for video " + videoId, err);
+      await logBreadcrumb("verdict_fetch_error", { videoId, name: err && err.name, message: err && err.message });
     }
     return classifyVerdictError(err);
   } finally {
@@ -166,6 +176,7 @@ async function postVideoWatched(videoId) {
     return { added: false, reason: "not_configured" };
   }
 
+  await logBreadcrumb("watched_fetch_start", { videoId });
   try {
     const response = await fetch(COMPANION_ORIGIN + VIDEO_WATCHED_PATH, {
       method: "POST",
@@ -175,6 +186,7 @@ async function postVideoWatched(videoId) {
       },
       body: JSON.stringify({ video_id: videoId }),
     });
+    await logBreadcrumb("watched_fetch_responded", { videoId, status: response.status });
     if (!response.ok) {
       console.warn(
         "Groundhog: companion responded " + response.status + " to watched-video request for " + videoId
@@ -188,6 +200,7 @@ async function postVideoWatched(videoId) {
     // The companion may just not be running - fail quietly rather than
     // spamming the console.
     console.warn("Groundhog: watched-video request failed", err);
+    await logBreadcrumb("watched_fetch_error", { videoId, name: err && err.name, message: err && err.message });
     return { added: false, reason: "companion_unreachable" };
   }
 }
@@ -198,7 +211,14 @@ chrome.runtime.onMessage.addListener((message, sender) => {
   }
   if (message.type === "GROUNDHOG_VIDEO_OPENED" && message.videoId) {
     const tabId = sender && sender.tab ? sender.tab.id : null;
-    requestVerdict(message.videoId).then((result) => {
+    logBreadcrumb("verdict_message_received", { videoId: message.videoId, tabId });
+    requestVerdict(message.videoId).then(async (result) => {
+      await logBreadcrumb("verdict_settled", {
+        videoId: message.videoId,
+        tabId,
+        hasError: Boolean(result && result.error),
+        code: result && result.code,
+      });
       if (tabId == null) {
         // No tab to route the result back to. This message only ever comes
         // from the content script (which always runs in a tab), so sender.tab
@@ -213,6 +233,7 @@ chrome.runtime.onMessage.addListener((message, sender) => {
           "Groundhog: no sender.tab on GROUNDHOG_VIDEO_OPENED for video " +
             message.videoId + " - cannot deliver result", sender
         );
+        await logBreadcrumb("verdict_no_tab", { videoId: message.videoId });
         return;
       }
       // Routed back as a separate message (rather than a sendResponse to
@@ -221,35 +242,43 @@ chrome.runtime.onMessage.addListener((message, sender) => {
       // content.js's overlay is already showing "checking..." by the time
       // this arrives, driven by GroundhogOverlay.reset() at the point the
       // request was first fired.
+      await logBreadcrumb("verdict_send_attempt", { videoId: message.videoId, tabId });
       chrome.tabs
         .sendMessage(tabId, {
           type: "GROUNDHOG_VERDICT_RESULT",
           videoId: message.videoId,
           result,
         })
+        .then(() => logBreadcrumb("verdict_send_success", { videoId: message.videoId, tabId }))
         .catch((err) => {
           // The tab may have navigated away or closed before the verdict
           // came back - fail quietly, there's nothing left to update.
           console.warn("Groundhog: could not deliver verdict result to tab", err);
+          return logBreadcrumb("verdict_send_fail", { videoId: message.videoId, tabId, message: err && err.message });
         });
     });
   }
   if (message.type === "GROUNDHOG_VIDEO_WATCHED" && message.videoId) {
     const tabId = sender && sender.tab ? sender.tab.id : null;
-    postVideoWatched(message.videoId).then((result) => {
+    logBreadcrumb("watched_message_received", { videoId: message.videoId, tabId });
+    postVideoWatched(message.videoId).then(async (result) => {
+      await logBreadcrumb("watched_settled", { videoId: message.videoId, tabId, added: result && result.added });
       if (tabId == null) {
         return;
       }
+      await logBreadcrumb("watched_send_attempt", { videoId: message.videoId, tabId });
       chrome.tabs
         .sendMessage(tabId, {
           type: "GROUNDHOG_WATCHED_RESULT",
           videoId: message.videoId,
           result,
         })
+        .then(() => logBreadcrumb("watched_send_success", { videoId: message.videoId, tabId }))
         .catch((err) => {
           // Same as GROUNDHOG_VERDICT_RESULT above - the tab may have
           // navigated away or closed before this came back.
           console.warn("Groundhog: could not deliver watched result to tab", err);
+          return logBreadcrumb("watched_send_fail", { videoId: message.videoId, tabId, message: err && err.message });
         });
     });
   }

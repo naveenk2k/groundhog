@@ -124,6 +124,38 @@
       button:hover {
         background: var(--ghog-button-bg-hover);
       }
+      details {
+        margin-top: 24px;
+        border-top: 1px solid var(--ghog-border);
+        padding-top: 12px;
+      }
+      summary {
+        cursor: pointer;
+        font-weight: 600;
+        color: var(--ghog-fg-secondary);
+      }
+      #debug-log {
+        margin-top: 10px;
+        max-height: 240px;
+        overflow-y: auto;
+        font-family: monospace;
+        font-size: 11px;
+        line-height: 1.5;
+        white-space: pre-wrap;
+        background: var(--ghog-field-bg);
+        border: 1px solid var(--ghog-border);
+        border-radius: 6px;
+        padding: 8px;
+      }
+      #debug-log-empty {
+        color: var(--ghog-fg-secondary);
+        font-style: italic;
+      }
+      .debug-log-buttons {
+        margin-top: 8px;
+        display: flex;
+        gap: 8px;
+      }
       /* No `display` set here - the browser's own `[hidden] { display: none }`
          rule (specificity 0-1-0) needs to keep winning over this ID rule so
          options.js's statusEl.hidden toggling actually has an effect. A
@@ -186,8 +218,25 @@
     <button id="save">Save</button>
     <span id="status" hidden>Saved</span>
 
+    <details>
+      <summary>Debug log</summary>
+      <p class="hint">
+        A breadcrumb trail of background-worker request/response/delivery
+        steps, persisted here because the background worker's own console
+        isn't reliably inspectable in every browser. Useful when a video
+        gets stuck on "Checking..." or "Marking as watched..." - the last
+        entry logged before it got stuck is usually the step that failed.
+      </p>
+      <div id="debug-log"><span id="debug-log-empty">No entries yet.</span></div>
+      <div class="debug-log-buttons">
+        <button id="debug-log-refresh" type="button">Refresh</button>
+        <button id="debug-log-clear" type="button">Clear</button>
+      </div>
+    </details>
+
     <script src="options-k.js"></script>
     <script src="options-model.js"></script>
+    <script src="debug-log.js"></script>
     <script src="options.js"></script>
   </body>
 </html>

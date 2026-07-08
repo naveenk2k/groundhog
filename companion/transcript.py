@@ -93,6 +93,29 @@ def _pick_subtitle_url(info: dict) -> str | None:
     return None
 
 
+def _extract_creator(info: dict) -> str | None:
+    """Pick the creator name out of yt-dlp's info dict.
+
+    Prefers `uploader`, falling back to `channel` - both point at the same
+    thing depending on extractor path. For some videos, the `android_vr`
+    client (see module docstring) leaves both of those empty even though
+    `uploader_id`/`channel_id` are populated, so those are tried next.
+    `uploader_id` is typically an `@handle`-style string (e.g.
+    `'@BigTechnologyPodcast'`); the leading `@` is stripped since it's not
+    part of the display name elsewhere in this codebase. `channel_id` (a
+    raw channel ID, not a display name) is the last resort - better than
+    nothing, but expect it to look different from a normal creator name."""
+    creator = info.get("uploader") or info.get("channel")
+    if creator:
+        return creator
+
+    uploader_id = info.get("uploader_id")
+    if uploader_id:
+        return uploader_id.lstrip("@")
+
+    return info.get("channel_id")
+
+
 def _vtt_to_text(vtt: str) -> str:
     """Collapse a WebVTT caption file down to plain spoken text, deduplicating
     consecutive repeated lines (auto-captions often repeat the same line
@@ -159,9 +182,7 @@ def fetch_transcript(video_id: str) -> TranscriptResult:
         }
 
     title = info.get("title")
-    # yt-dlp exposes the channel name as `uploader`, falling back to
-    # `channel` - both point at the same thing depending on extractor path.
-    creator = info.get("uploader") or info.get("channel")
+    creator = _extract_creator(info)
 
     subtitle_url = _pick_subtitle_url(info)
     if subtitle_url is None:

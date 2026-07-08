@@ -11,7 +11,7 @@ Run directly: python -m companion.test_transcript
 
 import unittest
 
-from companion.transcript import _pick_subtitle_url, _vtt_to_text
+from companion.transcript import _extract_creator, _pick_subtitle_url, _vtt_to_text
 
 
 class PickSubtitleUrlTest(unittest.TestCase):
@@ -75,6 +75,39 @@ class PickSubtitleUrlTest(unittest.TestCase):
             },
         }
         self.assertEqual(_pick_subtitle_url(info), "https://example.com/manual-en.srv3")
+
+
+class ExtractCreatorTest(unittest.TestCase):
+    def test_uses_uploader_when_present(self):
+        info = {
+            "uploader": "Marques Brownlee",
+            "channel": "MKBHD",
+            "uploader_id": "@mkbhd",
+            "channel_id": "UCBJycsmduvYEL83R_U4JriQ",
+        }
+        self.assertEqual(_extract_creator(info), "Marques Brownlee")
+
+    def test_falls_back_to_channel_when_uploader_absent(self):
+        info = {
+            "channel": "MKBHD",
+            "uploader_id": "@mkbhd",
+            "channel_id": "UCBJycsmduvYEL83R_U4JriQ",
+        }
+        self.assertEqual(_extract_creator(info), "MKBHD")
+
+    def test_falls_back_to_stripped_uploader_id_when_uploader_and_channel_absent(self):
+        info = {
+            "uploader_id": "@BigTechnologyPodcast",
+            "channel_id": "UCsomeChannelId",
+        }
+        self.assertEqual(_extract_creator(info), "BigTechnologyPodcast")
+
+    def test_falls_back_to_channel_id_as_last_resort(self):
+        info = {"channel_id": "UCsomeChannelId"}
+        self.assertEqual(_extract_creator(info), "UCsomeChannelId")
+
+    def test_returns_none_when_everything_absent(self):
+        self.assertIsNone(_extract_creator({}))
 
 
 class VttToTextTest(unittest.TestCase):

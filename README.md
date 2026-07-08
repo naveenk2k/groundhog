@@ -1,13 +1,23 @@
 # Groundhog
 
-Groundhog is a Chrome extension paired with a local Python companion that
-checks a YouTube video against everything you've already watched, and tells
-you whether it's actually saying something new before you sink time into it.
-Open a video and, within a few seconds, an overlay tells you how novel it is
-compared to your watch history, how well-executed it is, and how deep it
-goes, plus a plain-language recommendation. It doesn't skip or hide
-anything; you still decide what to watch. It only covers regular
-`youtube.com/watch` pages (not Shorts or embedded players).
+Groundhog checks a YouTube video against everything you've already watched
+before you spend time on it. That way you can tell whether it's actually
+saying something new, or just another take on something you've already
+seen.
+
+Open a video. Within a few seconds, a small overlay tells you:
+
+- **How novel** it is compared to your watch history
+- **How well-executed** it is
+- **How deep** it goes
+- A plain-language recommendation, with a specific explanation (it names
+  the actual video it's comparing against, not a vague "your history")
+
+It never skips or hides anything. You always decide what to watch.
+Groundhog is two pieces: a browser extension that watches what you open,
+and a small local server (the companion) that does the actual thinking.
+It only covers regular `youtube.com/watch` pages, not Shorts or embedded
+players.
 
 ![Groundhog overlay showing a verdict on a real YouTube video](docs/screenshots/overlay-in-context.jpeg)
 
@@ -41,7 +51,8 @@ process alive, so the actual work happens in a local companion process:
 
 - **Chrome extension**: a content script detects the video ID and tracks
   watch progress on the page; a background service worker talks to the
-  companion over HTTP; an options page holds the two user-facing settings.
+  companion over HTTP; an options page holds the user-facing settings (see
+  "Configuration" below).
 - **Python companion**: a FastAPI server that fetches the transcript via
   `yt-dlp`, embeds it locally with `sentence-transformers`, searches a
   `sqlite-vec` corpus of your watch history for the closest topical matches,
@@ -149,7 +160,7 @@ You don't need to do anything else after the initial backfill.
 ## Configuration
 
 The extension's options page (`chrome://extensions` → Groundhog → Options)
-has two controls:
+has:
 
 - **Shared secret**: pasted from `.groundhog-secret`, required for the
   extension to authenticate to the companion.
@@ -157,6 +168,27 @@ has two controls:
   closest-matching watched videos (by vector search) get sent to Gemini
   alongside the new video for comparison. Higher K is a more thorough (and
   more expensive/slower) check; lower is cheaper and faster. Defaults to 5.
+- **Model**: which Gemini model checks each video: Flash (default), Flash
+  Lite (cheapest/fastest), or Pro (slower, more thorough).
+- **Debug log**: a collapsed section showing recent background-worker
+  activity (request/response/delivery steps). It's persisted so it's
+  readable even when the browser's own console for the extension isn't.
+  Useful if a video ever gets stuck on "Checking..." or "Marking as
+  watched...".
+
+## Running tests
+
+Companion (Python, `unittest`):
+
+```
+.venv/bin/python -m unittest discover -s . -p "test_*.py"
+```
+
+Extension (Node's built-in `node:test`, no framework dependency):
+
+```
+cd extension && npm test
+```
 
 ## Project status
 
@@ -168,14 +200,11 @@ overlay), but a few things are worth knowing:
   `android_vr` client being exempt from YouTube's PO-token requirement, which
   could change at any time. See [`DECISIONS.md`](DECISIONS.md) for the
   fallback plan if that happens.
-- **No verdict caching.** Every video open re-runs the full pipeline, even on
-  a rewatch.
 - **No spend cap.** There's no tracked ceiling on Gemini API usage yet.
 
 See the "Deferred, not forgotten" and "Not part of this tool" sections of
 [`PLAN.md`](PLAN.md) for the fuller list of what's intentionally out of scope
-for now (a manual "mark as seen" button, a model picker, Shorts support, and
-so on).
+for now (Shorts support and similar).
 
 ## License
 

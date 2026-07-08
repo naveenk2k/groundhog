@@ -1,23 +1,18 @@
 /**
- * Pure K-value logic (issue #9), kept free of any DOM/chrome.* API so it can
- * be unit-tested directly in Node - same pattern as video-id.js and
- * watch-tracker.js. Shared by options.js (the slider UI) and background.js
- * (reading the persisted value before building the /verdict request body),
- * so both sides agree on the same default and valid range without
- * duplicating the numbers.
+ * Pure K-value logic, kept free of any DOM/chrome.* API so it can be
+ * unit-tested directly in Node. Shared by options.js (the slider UI) and
+ * background.js (reading the persisted value before building the /verdict
+ * request body), so both sides agree on the same default and valid range
+ * without duplicating the numbers.
  *
- * See DECISIONS.md "Claude call: prompt content and tunables" (predates the
- * Gemini swap; the reasoning still applies): K is the number of similar
- * watched videos (by vector search) sent to the LLM alongside the new
- * video's transcript. Bigger K costs more tokens per call for (hopefully)
- * better-grounded judgments; smaller K is cheaper and faster.
+ * K is the number of similar watched videos (by vector search) sent to the
+ * LLM alongside the new video's transcript - see DECISIONS.md "Claude call:
+ * prompt content and tunables".
  */
 
-// Matches companion/app.py's VerdictRequest.k default (5) - see app.py. Kept
-// in sync manually since the extension and companion are separate deploys
-// with no shared schema; changing this without also changing the companion
-// default just means the client stops relying on the server default, not a
-// behavior change if both happen to still be 5.
+// Matches companion/app.py's VerdictRequest.k default (5). Kept in sync
+// manually since the extension and companion are separate deploys with no
+// shared schema.
 const DEFAULT_K = 5;
 const MIN_K = 1;
 const MAX_K = 10;

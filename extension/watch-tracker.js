@@ -1,14 +1,13 @@
 /**
- * Watch-threshold tracking logic (issue #7), loaded before content.js in
- * manifest.json so WatchThresholdTracker is available as a global in the
- * content-script context - same pattern as video-id.js.
+ * Watch-threshold tracking logic, loaded before content.js in manifest.json
+ * so WatchThresholdTracker is available as a global in the content-script
+ * context - same pattern as video-id.js.
  *
  * Deliberately kept free of any DOM/chrome.* API so it can be unit-tested
- * directly in Node (see watch-tracker.test.js): it only ever sees plain
- * numbers (currentTime/duration) and a video ID string, and returns a plain
- * boolean. content.js is responsible for the actual `timeupdate` wiring and
- * for calling `reset()` on SPA navigation (see content.js's
- * `yt-navigate-finish` handler).
+ * directly in Node: it only ever sees plain numbers (currentTime/duration)
+ * and a video ID string, and returns a plain boolean. content.js is
+ * responsible for the actual `timeupdate` wiring and for calling `reset()`
+ * on SPA navigation.
  */
 
 // A video only counts as "seen" once you've watched 70% of it or 5 minutes,

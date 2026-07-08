@@ -1,7 +1,7 @@
 /**
- * On-page overlay (issue #8): the actual DOM/rendering half. Uses the pure
- * state machine in overlay-state.js (createOverlayState / applyVerdictResult
- * / toggleCollapsed / dismissOverlay) for all state transitions, and only
+ * On-page overlay: the actual DOM/rendering half. Uses the pure state
+ * machine in overlay-state.js (createOverlayState / applyVerdictResult /
+ * toggleCollapsed / dismissOverlay) for all state transitions, and only
  * concerns itself with building/injecting/re-rendering the panel.
  *
  * Loaded before content.js in manifest.json (after overlay-state.js), so
@@ -10,7 +10,7 @@
  *   GroundhogOverlay.reset(videoId)        - fresh "checking..." panel
  *   GroundhogOverlay.setResult(videoId, r) - fill in verdict or error
  *
- * Design notes (see issue #8 for the full brief):
+ * Design notes:
  * - Shadow DOM keeps all CSS below scoped to the overlay - nothing here can
  *   leak into YouTube's own styles, and nothing YouTube does can reach in.
  * - Font stack, corner radius, shadow weight, and light/dark colors are
@@ -24,16 +24,16 @@
  * Turn a raw error string (from companion/app.py's `{error: "..."}`,
  * companion/verdict.py's Gemini failures, or background.js's own
  * companion-unreachable/timeout messages) into a short, calm, one-line
- * reason for the "can't evaluate" badge (issue #10).
+ * reason for the "can't evaluate" badge.
  *
  * Deliberately pattern-matching on recognizable substrings rather than an
- * exhaustive enum: the three known failure sources (no transcript,
- * companion unreachable/timed out, Gemini API failure) each produce error
- * text of a wildly different shape and verbosity, and this only needs to
- * degrade gracefully for anything unrecognized - not enumerate every
- * possible internal exception string. Kept outside the IIFE below (and
- * exported via module.exports) so it's plain, DOM-free, testable logic -
- * same pattern as overlay-state.js/video-id.js/watch-tracker.js.
+ * exhaustive enum: the known failure sources (no transcript, companion
+ * unreachable/timed out, Gemini API failure) each produce error text of a
+ * wildly different shape and verbosity, and this only needs to degrade
+ * gracefully for anything unrecognized - not enumerate every possible
+ * internal exception string. Kept outside the IIFE below (and exported via
+ * module.exports) so it's plain, DOM-free, testable logic - same pattern as
+ * overlay-state.js/video-id.js/watch-tracker.js.
  */
 function classifyOverlayError(raw) {
   if (typeof raw !== "string" || !raw.trim()) {
@@ -50,16 +50,16 @@ function classifyOverlayError(raw) {
 
   // background.js's own client-side AbortController timeout ("...timed out
   // after Xs") or companion/verdict.py's own clean timeout message ("took
-  // too long to respond") - distinct from "unreachable" per issue #10's
-  // acceptance criteria (a timeout got this far, so the companion *is*
-  // reachable, it just didn't finish in time).
+  // too long to respond") - distinct from "unreachable" since a timeout got
+  // this far, so the companion *is* reachable, it just didn't finish in
+  // time.
   if (msg.includes("timed out") || msg.includes("timeout") || msg.includes("took too long")) {
     return "Groundhog took too long to respond.";
   }
 
-  // background.js's NOT_CONFIGURED_MESSAGE (issue #9): no secret has been
-  // pasted into the options page yet - distinct one-liner pointing at setup
-  // rather than a failure.
+  // background.js's NOT_CONFIGURED_MESSAGE: no secret has been pasted into
+  // the options page yet - distinct one-liner pointing at setup rather than
+  // a failure.
   if (msg.includes("isn't set up") || msg.includes("no secret configured")) {
     return "Groundhog isn't set up yet.";
   }
@@ -166,10 +166,9 @@ if (typeof module !== "undefined" && module.exports) {
      *
      * No red anywhere - red is YouTube's own brand/accent color, and using
      * it here would read as "part of YouTube" in a misleading way rather
-     * than "fitting in" (see issue #8). No bright/neon accent either: the
-     * one accent role (score-bar fill) just uses the primary text color at
-     * reduced opacity, so it reads as restrained/monochrome, not a color
-     * statement.
+     * than "fitting in". No bright/neon accent either: the one accent role
+     * (score-bar fill) just uses the primary text color at reduced opacity,
+     * so it reads as restrained/monochrome, not a color statement.
      */
     .ghog-root {
       --ghog-font: Roboto, "YouTube Sans", Arial, sans-serif;
@@ -202,7 +201,7 @@ if (typeof module !== "undefined" && module.exports) {
     .ghog-panel {
       pointer-events: auto;
       width: 280px;
-      max-width: calc(100vw - 32px); /* keeps it usable on mobile-width layouts per issue #8's acceptance criteria */
+      max-width: calc(100vw - 32px); /* keeps it usable on mobile-width layouts */
       background: var(--ghog-bg);
       color: var(--ghog-fg);
       border: 1px solid var(--ghog-border);
@@ -276,13 +275,13 @@ if (typeof module !== "undefined" && module.exports) {
       100% { content: ""; }
     }
 
-    /* "Can't evaluate" badge (issue #10) - deliberately distinct from both
-     * "checking..." (no dots/spinner) and a real verdict (no score bars, no
-     * bold recommendation line) so it reads as "we don't know" rather than
-     * "this scored badly" or "still working." Muted/monochrome only, same
-     * no-red rule as the rest of the overlay (see the design-tokens comment
-     * above) - a neutral glyph in a soft circle, not a warning triangle or
-     * an alarm color. */
+    /* "Can't evaluate" badge - deliberately distinct from both "checking..."
+     * (no dots/spinner) and a real verdict (no score bars, no bold
+     * recommendation line) so it reads as "we don't know" rather than "this
+     * scored badly" or "still working." Muted/monochrome only, same no-red
+     * rule as the rest of the overlay (see the design-tokens comment above)
+     * - a neutral glyph in a soft circle, not a warning triangle or an
+     * alarm color. */
     .ghog-cant-evaluate {
       display: flex;
       align-items: flex-start;
@@ -318,9 +317,8 @@ if (typeof module !== "undefined" && module.exports) {
     }
 
     /* Recommendation is the single most prominent line in the panel - the
-     * actual "should I watch this" takeaway - per issue #8's typography
-     * hierarchy requirement. Everything else (scores, explanation) is
-     * visually secondary. */
+     * actual "should I watch this" takeaway. Everything else (scores,
+     * explanation) is visually secondary. */
     .ghog-recommendation {
       font-size: 13px;
       font-weight: 600;
@@ -359,8 +357,8 @@ if (typeof module !== "undefined" && module.exports) {
       height: 100%;
       border-radius: 999px;
       /* Monochrome fill (primary text color at reduced opacity) - a
-       * deliberate restrained choice per issue #8, not a coded traffic-light
-       * color scheme. */
+       * deliberate restrained choice, not a coded traffic-light color
+       * scheme. */
       background: var(--ghog-fg);
       opacity: 0.55;
     }
@@ -495,10 +493,10 @@ if (typeof module !== "undefined" && module.exports) {
     }
 
     if (state.phase === "error") {
-      // Neutral "can't evaluate" badge (issue #10): same treatment no matter
-      // which of the three failure sources produced it (no transcript,
-      // companion unreachable/timed out, Gemini call failure) - only the
-      // one-line reason (classifyOverlayError) differs.
+      // Neutral "can't evaluate" badge: same treatment no matter which
+      // failure source produced it (no transcript, companion
+      // unreachable/timed out, Gemini call failure) - only the one-line
+      // reason (classifyOverlayError) differs.
       const wrap = document.createElement("div");
       wrap.className = "ghog-cant-evaluate";
 
@@ -581,7 +579,7 @@ if (typeof module !== "undefined" && module.exports) {
    * transition (the .ghog-visible class, transitioned in CSS over 200ms -
    * see the design-tokens comment above) whenever content changes, rather
    * than an abrupt pop - covers both "first appears" and "checking ->
-   * verdict updates in place" per issue #8.
+   * verdict updates in place".
    */
   function render() {
     ensureDom();
@@ -649,29 +647,20 @@ if (typeof module !== "undefined" && module.exports) {
       render();
     },
     /**
-     * Called from content.js's handleNavigation (issue #11) when a
-     * `yt-navigate-finish` lands on a URL that isn't a watch page at all
-     * (extractVideoId returned null - home, search, a channel page, etc.).
-     * Removes the shadow-DOM host from the page entirely, rather than just
-     * hiding it via `display: none` as dismiss()/collapse already do
-     * in-place, so there's nothing left in the DOM and no button click
-     * listeners left referencing an element no page content still points
-     * to (host.remove() detaches it; dropping the `els`/`shadowRoot`
-     * references here means nothing in this module keeps it alive either,
-     * so it's eligible for GC like any other removed subtree).
+     * Called from content.js's handleNavigation when a `yt-navigate-finish`
+     * lands on a URL that isn't a watch page at all (extractVideoId
+     * returned null). Removes the shadow-DOM host entirely (rather than
+     * hiding it via `display: none`) and drops the `els`/`shadowRoot`
+     * references so the removed subtree is eligible for GC.
      *
-     * Deliberately does not tear down `window.__groundhogOverlayInstalled`
-     * or the `GroundhogOverlay` object itself - those represent "has this
-     * content-script instance's IIFE run," not "is a host currently in the
-     * DOM," and must survive teardown so a later reset() (for the next real
-     * watch page) can run ensureDom() again and build a fresh host rather
-     * than silently doing nothing because the module thinks it's already
-     * installed.
+     * Deliberately does not reset `window.__groundhogOverlayInstalled` or
+     * `GroundhogOverlay` itself - those track "has this content-script
+     * instance's IIFE run," not "is a host currently in the DOM," and must
+     * survive teardown so a later reset() can run ensureDom() again.
      *
-     * Resets `currentVideoId` and `state` too, so if a stale setResult()
-     * for the torn-down video's ID somehow arrives after this runs, it's
-     * ignored (currentVideoId no longer matches) instead of reaching into
-     * a `render()` that would just recreate the host we just removed.
+     * Resets `currentVideoId` too, so a stale setResult() for the
+     * torn-down video arriving after this runs is ignored instead of
+     * recreating the host we just removed.
      */
     teardown() {
       currentVideoId = null;

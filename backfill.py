@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Seed the corpus in bulk from a Google Takeout watch-history export (#6).
+"""Seed the corpus in bulk from a Google Takeout watch-history export.
 
 This is the bulk version of add_video.py: same fetch-transcript -> embed ->
 insert_video pipeline, run once per unique video ID found in a Takeout
@@ -22,8 +22,8 @@ array of objects like:
     }
 
 Some entries have no `titleUrl` at all (the video has since been removed from
-YouTube) - those are unrecoverable and are skipped without error, per the
-issue's acceptance criteria.
+YouTube) - those are unrecoverable and are skipped without error rather than
+failing the whole run.
 
 Sequential, not parallelized: see DECISIONS.md "Backfill" for why (abuse
 detection risk on a personal IP, for a workflow that only ever runs once).
@@ -100,8 +100,7 @@ def dedupe_entries(entries: list[dict]) -> tuple[list[tuple[str, str, str]], int
     for entry in entries:
         title_url = entry.get("titleUrl")
         if not title_url:
-            # Video has been removed from YouTube since being watched -
-            # unrecoverable, per the issue's acceptance criteria.
+            # Video has been removed from YouTube since being watched - unrecoverable.
             skipped_no_url += 1
             continue
 

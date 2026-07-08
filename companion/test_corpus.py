@@ -1,4 +1,4 @@
-"""Tests for companion/corpus.py (issue #3).
+"""Tests for companion/corpus.py.
 
 Inserts a handful of made-up transcripts covering distinctly different
 topics, then confirms a query with a new embedding returns the expected

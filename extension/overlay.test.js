@@ -1,7 +1,6 @@
 /**
- * Tests for overlay.js's classifyOverlayError (issue #10) - the pure,
- * DOM-free mapping from a raw `/verdict` error string (whichever of the
- * three failure sources it came from: no transcript, companion
+ * Tests for overlay.js's classifyOverlayError - the pure, DOM-free mapping
+ * from a raw `/verdict` error string (no transcript, companion
  * unreachable/timed out, or a Gemini API failure - see companion/app.py,
  * background.js, and companion/verdict.py) to a short, calm one-line
  * reason for the "can't evaluate" badge.
@@ -83,16 +82,11 @@ test("no-secret-configured maps to a setup-specific reason", () => {
   );
 });
 
-// companion/verdict.py and background.js were updated to log full technical
-// detail server/console-side and return only a short, already-clean message
-// over the wire (not a raw exception dump) - these are the *actual* strings
-// that reach the overlay in practice now, distinct from the older, more
-// technical strings the tests above exercise for backward-compat matching.
-// This guards against the classifier's own substring checks silently
-// falling through to the generic fallback just because the upstream
-// wording changed to already be clean (a real regression caught while
-// fixing this: the old checks looked for keywords like "gemini" that no
-// longer appear once the message itself was cleaned up at the source).
+// Guards against a real regression: companion/verdict.py and background.js
+// now return already-clean, short messages over the wire instead of raw
+// exception text, and the classifier's substring checks (e.g. looking for
+// "gemini") silently stopped matching once the upstream wording no longer
+// contained those keywords.
 test("already-clean upstream messages pass through with their intended reason, not the generic fallback", () => {
   assert.equal(
     classifyOverlayError("No transcript available for this video."),

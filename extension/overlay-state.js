@@ -1,6 +1,6 @@
 /**
- * Overlay state machine (issue #8), kept free of any DOM/chrome.* API so it
- * can be unit-tested directly in Node - same pattern as watch-tracker.js and
+ * Overlay state machine, kept free of any DOM/chrome.* API so it can be
+ * unit-tested directly in Node - same pattern as watch-tracker.js and
  * video-id.js. overlay.js (the DOM-rendering half) is the only thing that
  * touches `document`/shadow DOM; this file just computes the next plain-object
  * state given the previous state and an action.
@@ -18,9 +18,9 @@
  * handleNavigation) - the overlay always starts a video afresh: not
  * collapsed, not dismissed, showing "checking...". That's a deliberate
  * simplification over trying to remember collapse/dismiss preference across
- * different videos: it keeps "appears on every watch page load" (issue #8's
- * acceptance criteria) unambiguous. Collapse/dismiss only affect the overlay
- * for the *current* video's lifetime - see toggleCollapsed/dismissOverlay.
+ * different videos: it keeps "appears on every watch page load" unambiguous.
+ * Collapse/dismiss only affect the overlay for the *current* video's
+ * lifetime - see toggleCollapsed/dismissOverlay.
  */
 
 /**
@@ -38,8 +38,7 @@ function createOverlayState() {
  *
  * Deliberately does not touch `collapsed` - if the user already collapsed
  * the panel to a badge while the check was running, the verdict arriving
- * must not force it back open (PLAN.md/issue #8: "no auto-popping-open
- * after being collapsed once"). It also does not touch `dismissed` for the
+ * must not force it back open. It also does not touch `dismissed` for the
  * same reason: a dismiss is a per-video decision the user already made.
  */
 function applyVerdictResult(state, result) {

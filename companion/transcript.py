@@ -1,4 +1,4 @@
-"""Transcript retrieval for the Groundhog companion (issue #2).
+"""Transcript retrieval for the Groundhog companion.
 
 Fetches a YouTube video's transcript by video ID using yt-dlp's Python API
 (not the CLI - we import yt_dlp directly and call it in-process).

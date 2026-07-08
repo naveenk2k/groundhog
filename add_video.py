@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
 """Manually add a single watched video to the persistent corpus.
 
-This bridges the gap until #6 (backfill.py, bulk import from a Takeout
-export) and #7 (extension auto-adds videos on crossing the watch threshold)
-are built - until then, this is the only way to grow the real corpus.
-Fetches the transcript and title via the existing companion.transcript
-module, embeds it, and inserts it into the corpus DB at its default,
-persistent path (companion/config.py CORPUS_DB_FILE - repo root, gitignored).
+For adding one specific video outside of the extension's automatic
+watch-threshold add (extension/watch-tracker.js) or a bulk backfill.py run.
+Fetches the transcript and title via companion.transcript, embeds it, and
+inserts it into the corpus DB at its default, persistent path
+(companion/config.py's CORPUS_DB_FILE - repo root, gitignored).
 
 Usage:
     python add_video.py https://www.youtube.com/watch?v=VIDEO_ID

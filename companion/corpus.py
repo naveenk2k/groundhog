@@ -1,14 +1,11 @@
-"""Groundhog companion: corpus storage and retrieval (issue #3).
+"""Groundhog companion: corpus storage and retrieval.
 
 The corpus is the local record of everything you've already watched: one row
 per video, holding its metadata, the raw transcript text, and an embedding of
-that text. Two things build on top of this module later:
-
-  - #4 (Claude call) queries the corpus for the top-K nearest videos to a
-    newly-opened one, and sends their full transcripts to Claude alongside
-    the new video's transcript.
-  - #9 (backfill script) inserts one row per video from a Takeout watch
-    history export.
+that text. companion/verdict_pipeline.py queries it for the top-K nearest
+videos to a newly-opened one and sends their full transcripts to Gemini
+alongside the new video's transcript; backfill.py inserts one row per video
+from a Takeout watch-history export.
 
 Raw transcript text is stored alongside the embedding (not instead of it) so
 the whole corpus can be re-embedded later if the embedding model ever
@@ -70,12 +67,13 @@ _MIGRATIONS = [
 class CorpusMatch:
     """One row returned by a corpus similarity query.
 
-    Carries everything #4 needs to build the Claude prompt: the matched
-    video's title, creator, when it was watched, and its full transcript
-    text (per DECISIONS.md, full transcripts are sent to Claude, not
-    excerpts). Creator lets Claude distinguish "same channel revisiting its
-    own topic" from "several different creators independently covering the
-    same ground" - two very different signals for judging novelty.
+    Carries everything needed to build the verdict prompt (companion/
+    verdict.py): the matched video's title, creator, when it was watched,
+    and its full transcript text (per DECISIONS.md, full transcripts are
+    sent, not excerpts). Creator lets the model distinguish "same channel
+    revisiting its own topic" from "several different creators independently
+    covering the same ground" - two very different signals for judging
+    novelty.
     """
 
     video_id: str

@@ -1,12 +1,9 @@
 /**
- * Options page controller (issue #9): loads/saves the shared secret and K
- * slider to chrome.storage.local. Depends on options-k.js (loaded first in
- * options.html) for DEFAULT_K/clampK, the same clamp/default logic
- * background.js uses when reading K back out - see options-k.js's docs on
- * why that's shared rather than duplicated.
+ * Options page controller: loads/saves the shared secret and K slider to
+ * chrome.storage.local, using options-k.js's DEFAULT_K/clampK so this page
+ * and background.js agree on the same default and valid range.
  *
- * Keys used (both consumed directly by background.js - see its readSecret()
- * and readK()):
+ * Keys used (also read directly by background.js's readSecret()/readK()):
  *   groundhogSecret - the pasted shared secret, string
  *   groundhogK      - the chosen K, integer in [MIN_K, MAX_K]
  */

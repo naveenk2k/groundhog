@@ -1,72 +1,22 @@
-"""Groundhog companion: the LLM call that turns a transcript into a verdict (issue #5).
+"""Groundhog companion: the LLM call that turns a transcript into a verdict.
 
-Given a newly-opened video's transcript and the top-K corpus matches from
-vector search (#3), this asks an LLM to judge whether the new video says
-anything substantively new - and returns a structured result (novelty,
-execution, depth, explanation, recommendation) rather than parsed free text.
+Given a newly-opened video's transcript and its top-K corpus matches from
+vector search, asks Gemini to judge whether the new video says anything
+substantively new, and returns a structured result (novelty, execution,
+depth, explanation, recommendation) via forced schema output rather than
+parsed free text.
 
-Provider: Gemini, not Claude
------------------------------
-Originally built against Claude (Anthropic), but Claude has no free tier -
-running this requires a paid API balance. Gemini's free tier covers the
-Flash models with generous rate limits, which is enough for a tool that
-fires once per video you open, not in a tight loop. Swapped wholesale
-rather than kept as a multi-provider abstraction: this project only needs
-one working LLM call, and speculative provider-switching support isn't
-needed until there's an actual second provider in active use.
+See DECISIONS.md for the reasoning behind the choices that live in this
+module: "Provider swap: Gemini instead of Claude" (why Gemini, and why a
+wholesale swap rather than a multi-provider abstraction), "Claude call:
+prompt content and tunables" (full transcripts rather than excerpts, K as a
+caller-supplied parameter), and "Verdict tone: second person, and naming
+specific matched videos" (why the system prompt below addresses the viewer
+directly and references matched videos by title/date).
 
-Structured output, not free-text parsing
--------------------------------------------
-The response is constrained via Gemini's `response_schema` +
-`response_mime_type="application/json"` (its equivalent of Claude's forced
-tool-use): the model is required to return JSON matching the schema below,
-so the response shape is guaranteed instead of hoping a text response
-happens to contain parseable JSON - see DECISIONS.md ("Claude call: prompt
-content and tunables", written before the provider swap but the reasoning
-still applies).
-
-Full transcripts, not excerpts
--------------------------------
-The prompt includes the new video's full transcript plus the **full
-transcripts** of the top-K matches, each labeled with its title, creator,
-and (when available) the date it was watched. This is a deliberate,
-already-settled decision (not something to "optimize" back down to
-excerpts) - see DECISIONS.md and PLAN.md ("Scoring", "Claude call: prompt
-content and tunables"). Creator is included so the model can distinguish
-"the same channel repeating itself" from "different creators
-independently converging on the same topic" - see DECISIONS.md ("Corpus
-schema"). The watch date lets the model reference a specific matched
-video concretely ("the road trip video you watched last month") instead
-of only gesturing at "your watch history" as an abstract whole, and is
-omitted from the prompt (not just from what gets said) when a corpus row
-doesn't have one, so there's nothing for the model to awkwardly not-quite-
-reference.
-
-Second person, not third
---------------------------
-The system prompt explicitly instructs the model to address the viewer
-directly ("you", "your watch history") rather than describing them in the
-third person ("the viewer", "the user's watch history") - the latter reads
-like a report about someone else, not a tool talking to you.
-
-Model and K are both parameters, not hardcoded
-------------------------------------------------
-`model` defaults to Gemini's Flash tier (speed-prioritized - this fires on
-every video open, per PLAN.md) but is overridable via the `model` argument
-or the GROUNDHOG_GEMINI_MODEL env var. `k` isn't this module's concern at
-all - the caller (app.py) queries the corpus for however many matches it's
-asked for and hands the resulting list here; this module just prompts with
-whatever it's given.
-
-Timeout handling
------------------
-The call is wrapped with an explicit timeout (default 45s, also
-overridable) so a slow or hanging API call can't hang the request
-indefinitely. A timeout, a non-2xx API error, or a connection failure all
-come back as `{"error": "..."}` rather than raising - callers get a clear
-failure indicator instead of a hang or a crash. The full graceful-failure
-UX (the on-page "can't evaluate" badge) is issue #10, out of scope here;
-this module only needs to fail cleanly and quickly.
+Never raises: a timeout, a non-2xx API error, a connection failure, or an
+unparseable response all come back as `{"error": "..."}` instead of
+propagating, so a slow or broken call can't hang or crash the caller.
 """
 
 from __future__ import annotations

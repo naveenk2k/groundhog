@@ -1,7 +1,7 @@
 /**
- * Tests for options-k.js's clampK (issue #9). Plain Node test using the
- * built-in `node:test`/`node:assert` modules - no test framework dependency
- * to add for a project that otherwise has no JS package.json. Run with:
+ * Tests for options-k.js's clampK. Plain Node test using the built-in
+ * `node:test`/`node:assert` modules - no test framework dependency to add
+ * for a project that otherwise has no JS package.json. Run with:
  *
  *   node --test extension/options-k.test.js
  */

@@ -1,20 +1,18 @@
 /**
  * Content script: detects YouTube watch-page navigation and tells the
  * background service worker which video is open, and tracks playback
- * progress to report when a video has actually been "watched" (issue #7).
+ * progress to report when a video has actually been "watched".
  *
  * YouTube is a single-page app - clicking through to a new video does not
  * trigger a full page load, so a content script that only runs once at
  * injection time would fire for the first video and never again. YouTube's
  * own SPA router dispatches a `yt-navigate-finish` event on `document` after
  * every navigation completes (including the very first one), which is the
- * standard hook for this - see PLAN.md / issue #4. Deliberately not using a
- * MutationObserver or URL polling per that issue's design.
+ * standard hook for this - not a MutationObserver or URL polling.
  *
  * This script only extracts the video ID and playback progress and forwards
- * them - it doesn't scrape or parse anything else from the page (see
- * PLAN.md: the companion fetches transcripts itself via yt-dlp, by video
- * ID).
+ * them - it doesn't scrape or parse anything else from the page (the
+ * companion fetches transcripts itself via yt-dlp, by video ID).
  */
 
 // Track the last video ID we posted "opened" for, so a `yt-navigate-finish`
@@ -22,11 +20,11 @@
 // fire a duplicate request.
 let lastPostedVideoId = null;
 
-// Tracks watch-threshold progress (issue #7). One instance for the content
-// script's lifetime, explicitly reset on every navigation - see
-// handleNavigation below and watch-tracker.js's own docs on why that reset
-// matters (YouTube reuses the same <video> element across SPA navigations,
-// so `timeupdate` state must not carry over from the previous video).
+// One instance for the content script's lifetime, explicitly reset on every
+// navigation - see handleNavigation below and watch-tracker.js's own docs on
+// why that reset matters (YouTube reuses the same <video> element across SPA
+// navigations, so `timeupdate` state must not carry over from the previous
+// video).
 const watchTracker = new WatchThresholdTracker();
 
 function handleNavigation() {
@@ -39,13 +37,11 @@ function handleNavigation() {
 
   if (!videoId) {
     // Navigated away from a watch page entirely (home, search, channel,
-    // etc. - see issue #11). Tear down the overlay so nothing stale (a
-    // verdict, "checking...", a "can't evaluate" badge) lingers on a page
-    // that isn't a watch page anymore, and forget the last-posted video ID:
-    // the dedup below only makes sense while still on a/the same watch
-    // page, so without this, navigating away and back to the *same* video
-    // later would be silently skipped as a no-op and leave the overlay torn
-    // down forever.
+    // etc.). Tear down the overlay so nothing stale (a verdict,
+    // "checking...", a "can't evaluate" badge) lingers on a page that isn't
+    // a watch page anymore, and forget the last-posted video ID: without
+    // this, navigating away and back to the *same* video later would be
+    // silently skipped as a no-op and leave the overlay torn down forever.
     lastPostedVideoId = null;
     GroundhogOverlay.teardown();
     return;
@@ -56,7 +52,7 @@ function handleNavigation() {
   lastPostedVideoId = videoId;
 
   // Show "checking..." immediately, in lockstep with the request firing -
-  // the overlay must not wait for a response to appear at all (issue #8).
+  // the overlay must not wait for a response to appear at all.
   GroundhogOverlay.reset(videoId);
 
   chrome.runtime.sendMessage({ type: "GROUNDHOG_VIDEO_OPENED", videoId });

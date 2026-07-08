@@ -19,7 +19,7 @@
   "content_scripts": [
     {
       "matches": ["*://www.youtube.com/watch*"],
-      "js": ["video-id.js", "watch-tracker.js", "overlay-state.js", "overlay.js", "content.js"],
+      "js": ["debug-log.js", "video-id.js", "watch-tracker.js", "overlay-state.js", "overlay.js", "content.js"],
       "run_at": "document_idle"
     }
   ],

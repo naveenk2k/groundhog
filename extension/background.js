@@ -44,6 +44,13 @@ const VERDICT_PATH = "/verdict";
 // to the corpus.
 const VIDEO_WATCHED_PATH = "/videos/watched";
 
+// companion/app.py's GET /videos/{video_id}. Fires once per video-opened
+// navigation, before ever requesting a verdict - skips the Gemini call
+// entirely for a video already in the corpus. video_id is a YouTube video
+// ID (fixed-format, no path-unsafe characters), so no extra escaping beyond
+// this is needed for the URL.
+const VIDEO_LOOKUP_PATH_PREFIX = "/videos/";
+
 // Header name must match companion/auth.py's SECRET_HEADER exactly
 // ("X-Groundhog-Secret") or every request gets a 401.
 const SECRET_HEADER = "X-Groundhog-Secret";
@@ -205,9 +212,60 @@ async function postVideoWatched(videoId) {
   }
 }
 
+/**
+ * Call the companion's GET /videos/{video_id} to check whether a video is
+ * already in the corpus - none of /verdict's embedding/similarity-search/
+ * Gemini cost. Fails open (`{ found: false }`) on any request problem
+ * (no secret configured, companion unreachable, non-2xx status) rather than
+ * surfacing its own error state: this is purely an optimization to skip
+ * unnecessary verdict checks, so a lookup failure should just fall through
+ * to the normal verdict flow instead of blocking on it.
+ */
+async function lookupVideo(videoId) {
+  const secret = await readSecret();
+  if (!secret) {
+    return { found: false };
+  }
+
+  try {
+    const response = await fetch(COMPANION_ORIGIN + VIDEO_LOOKUP_PATH_PREFIX + encodeURIComponent(videoId), {
+      method: "GET",
+      headers: {
+        [SECRET_HEADER]: secret,
+      },
+    });
+    if (!response.ok) {
+      return { found: false };
+    }
+    // { found: true, title, watched_at } or { found: false } - already the
+    // shape the overlay needs, just pass it through.
+    return await response.json();
+  } catch (err) {
+    // The companion may just not be running - fail open, same as above.
+    return { found: false };
+  }
+}
+
 chrome.runtime.onMessage.addListener((message, sender) => {
   if (!message) {
     return;
+  }
+  if (message.type === "GROUNDHOG_VIDEO_LOOKUP" && message.videoId) {
+    const tabId = sender && sender.tab ? sender.tab.id : null;
+    lookupVideo(message.videoId).then((result) => {
+      if (tabId == null) {
+        return;
+      }
+      chrome.tabs
+        .sendMessage(tabId, {
+          type: "GROUNDHOG_LOOKUP_RESULT",
+          videoId: message.videoId,
+          result,
+        })
+        .catch((err) => {
+          console.warn("Groundhog: could not deliver lookup result to tab", err);
+        });
+    });
   }
   if (message.type === "GROUNDHOG_VIDEO_OPENED" && message.videoId) {
     const tabId = sender && sender.tab ? sender.tab.id : null;

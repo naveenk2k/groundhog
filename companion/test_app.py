@@ -16,6 +16,7 @@ os.environ.setdefault("GROUNDHOG_CORPUS_DB", tempfile.mktemp(suffix=".sqlite"))
 
 from starlette.testclient import TestClient
 
+from companion import corpus
 from companion.app import app
 from companion.config import SECRET_FILE, SECRET_HEADER
 
@@ -40,6 +41,45 @@ class CorsPreflightTest(unittest.TestCase):
 
     def test_real_request_still_requires_the_secret_header(self):
         response = self.client.post("/verdict", json={"video_id": "abc", "k": 5})
+        self.assertEqual(response.status_code, 401)
+
+
+class GetVideoLookupTest(unittest.TestCase):
+    def setUp(self):
+        self.client = TestClient(app)
+        self.conn = corpus.get_connection()
+        corpus.insert_video(
+            self.conn,
+            "already_watched_id",
+            "A Video I've Already Watched",
+            "Some Creator",
+            "2026-01-05T10:00:00Z",
+            "irrelevant transcript text",
+        )
+
+    def test_found_video_reports_found_with_title_and_watched_at(self):
+        response = self.client.get(
+            "/videos/already_watched_id", headers={SECRET_HEADER: "test-secret"}
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.json(),
+            {
+                "found": True,
+                "title": "A Video I've Already Watched",
+                "watched_at": "2026-01-05T10:00:00Z",
+            },
+        )
+
+    def test_unknown_video_reports_not_found(self):
+        response = self.client.get(
+            "/videos/never_seen_this_one", headers={SECRET_HEADER: "test-secret"}
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {"found": False})
+
+    def test_requires_the_secret_header_like_every_other_route(self):
+        response = self.client.get("/videos/already_watched_id")
         self.assertEqual(response.status_code, 401)
 
 

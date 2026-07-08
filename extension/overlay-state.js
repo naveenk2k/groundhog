@@ -7,11 +7,12 @@
  *
  * Shape of the state object:
  *   {
- *     phase: "checking" | "verdict" | "error" | "stale",
- *     data: null | <verdict object from /verdict> | <{ message, code } for phase "error">,
+ *     phase: "checking" | "verdict" | "error" | "stale" | "watched",
+ *     data: null | <verdict object from /verdict> | <{ message, code } for phase "error"> | <{ title, watched_at } for phase "watched">,
  *     collapsed: boolean,   // true = shown as a small corner badge only
  *     dismissed: boolean,   // true = fully hidden until the next navigation
  *     watchNote: null | { kind: "success" | "failure", message: string },
+ *     alreadyWatched: boolean,  // true once this video is known to be in the corpus - see markAlreadyWatched/setAlreadyWatchedFlag
  *   }
  *
  * `code` (phase "error" only) is the machine-readable category alongside
@@ -46,7 +47,7 @@
  * companion has responded.
  */
 function createOverlayState() {
-  return { phase: "checking", data: null, collapsed: false, dismissed: false, watchNote: null };
+  return { phase: "checking", data: null, collapsed: false, dismissed: false, watchNote: null, alreadyWatched: false };
 }
 
 /**
@@ -79,6 +80,33 @@ function markContextInvalidated(state) {
 }
 
 /**
+ * Move to a terminal "watched" phase - a pre-check (content.js's
+ * GROUNDHOG_VIDEO_LOOKUP, fired before ever requesting a verdict) found
+ * this video already in the corpus, so there's no verdict to show and no
+ * point spending a Gemini call on it. `info` is the companion's lookup
+ * result shape ({ title, watched_at }) or null/undefined if the caller
+ * doesn't have it. Also flips `alreadyWatched`, same as
+ * setAlreadyWatchedFlag - see that function's docs for why the two are
+ * tracked separately from `phase`.
+ */
+function markAlreadyWatched(state, info) {
+  return { ...state, phase: "watched", data: info || null, alreadyWatched: true };
+}
+
+/**
+ * Flip `alreadyWatched` without touching `phase`/`data` - used when a
+ * manual "Mark as watched" click succeeds *during* an unrelated phase
+ * (checking/verdict/error), so the footer's button state can move to
+ * "already watched" without discarding whatever the main body is currently
+ * showing for the verdict check. Kept as its own top-level field (not
+ * derived from `phase === "watched"`) precisely so it can be true
+ * simultaneously with any other phase.
+ */
+function setAlreadyWatchedFlag(state) {
+  return { ...state, alreadyWatched: true };
+}
+
+/**
  * Set (or replace) the transient corpus-add banner - see the state-shape
  * comment above. Does not touch phase/data/collapsed/dismissed: this is
  * strictly a secondary signal layered on top of whatever the verdict check
@@ -108,6 +136,8 @@ if (typeof module !== "undefined" && module.exports) {
     createOverlayState,
     applyVerdictResult,
     markContextInvalidated,
+    markAlreadyWatched,
+    setAlreadyWatchedFlag,
     setWatchNote,
     clearWatchNote,
     toggleCollapsed,

@@ -20,6 +20,19 @@
 // fire a duplicate request.
 let lastPostedVideoId = null;
 
+// One random ID per content-script injection - purely diagnostic (see the
+// breadcrumbs in the onMessage listener below). Safari has a documented bug
+// class where a content script from before a page reload can keep running
+// as a "zombie" - its chrome.runtime.onMessage listener stays registered
+// and can still receive/resolve messages even though its `document` is a
+// disconnected leftover from the previous page load, not the one actually
+// visible. If a result ever gets marked "delivered" by background.js (see
+// background.js's verdict_send_success breadcrumb) but the overlay never
+// visibly updates, comparing CONTENT_INSTANCE_ID across breadcrumbs is how
+// to tell whether a zombie instance handled it instead of the live one.
+const CONTENT_INSTANCE_ID = Math.random().toString(36).slice(2, 10);
+logBreadcrumb("content_script_loaded", { instanceId: CONTENT_INSTANCE_ID, href: window.location.href });
+
 // One instance for the content script's lifetime, explicitly reset on every
 // navigation - see handleNavigation below and watch-tracker.js's own docs on
 // why that reset matters (YouTube reuses the same <video> element across SPA
@@ -163,11 +176,15 @@ function handleNavigation() {
   }
   lastPostedVideoId = videoId;
 
-  // Show "checking..." immediately, in lockstep with the request firing -
+  // Show "checking..." immediately, in lockstep with the lookup firing -
   // the overlay must not wait for a response to appear at all.
   GroundhogOverlay.reset(videoId);
 
-  safeSendMessage({ type: "GROUNDHOG_VIDEO_OPENED", videoId });
+  // Check the corpus for this video before ever requesting a verdict - if
+  // it's already been watched (auto-added or via "Mark as watched", see
+  // GROUNDHOG_LOOKUP_RESULT below), there's nothing to judge and no point
+  // spending a Gemini call on it.
+  safeSendMessage({ type: "GROUNDHOG_VIDEO_LOOKUP", videoId });
 }
 
 /**
@@ -181,11 +198,35 @@ chrome.runtime.onMessage.addListener((message) => {
   if (!message) {
     return;
   }
+  if (message.type === "GROUNDHOG_VERDICT_RESULT" || message.type === "GROUNDHOG_WATCHED_RESULT") {
+    // See CONTENT_INSTANCE_ID's docs above - document.hidden/visibilityState
+    // and whether the overlay host is actually attached distinguish a live,
+    // on-screen context from a zombie leftover receiving this instead.
+    logBreadcrumb("content_message_received", {
+      instanceId: CONTENT_INSTANCE_ID,
+      type: message.type,
+      videoId: message.videoId,
+      lastPostedVideoId,
+      hidden: document.hidden,
+      visibilityState: document.visibilityState,
+      overlayHostAttached: Boolean(document.getElementById("groundhog-overlay-host")),
+      href: window.location.href,
+    });
+  }
   if (message.type === "GROUNDHOG_VERDICT_RESULT") {
     GroundhogOverlay.setResult(message.videoId, message.result);
   }
   if (message.type === "GROUNDHOG_WATCHED_RESULT") {
     GroundhogOverlay.setWatchedResult(message.videoId, message.result);
+  }
+  if (message.type === "GROUNDHOG_LOOKUP_RESULT") {
+    if (message.result && message.result.found) {
+      GroundhogOverlay.showAlreadyWatched(message.videoId, message.result);
+    } else {
+      // Not in the corpus - proceed with the real verdict check now,
+      // exactly the request handleNavigation used to fire directly.
+      safeSendMessage({ type: "GROUNDHOG_VIDEO_OPENED", videoId: message.videoId });
+    }
   }
 });
 

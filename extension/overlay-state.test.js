@@ -14,19 +14,22 @@ const {
   createOverlayState,
   applyVerdictResult,
   markContextInvalidated,
+  markAlreadyWatched,
+  setAlreadyWatchedFlag,
   setWatchNote,
   clearWatchNote,
   toggleCollapsed,
   dismissOverlay,
 } = require("./overlay-state.js");
 
-test("createOverlayState starts checking, not collapsed, not dismissed, no watch note", () => {
+test("createOverlayState starts checking, not collapsed, not dismissed, no watch note, not already watched", () => {
   assert.deepEqual(createOverlayState(), {
     phase: "checking",
     data: null,
     collapsed: false,
     dismissed: false,
     watchNote: null,
+    alreadyWatched: false,
   });
 });
 
@@ -95,6 +98,28 @@ test("markContextInvalidated moves to phase stale with null data", () => {
   const next = markContextInvalidated(applyVerdictResult(createOverlayState(), { novelty: 5 }));
   assert.equal(next.phase, "stale");
   assert.equal(next.data, null);
+});
+
+test("markAlreadyWatched moves to phase watched, carries info, and sets alreadyWatched", () => {
+  const info = { title: "A Video", watched_at: "2026-01-05T10:00:00Z" };
+  const next = markAlreadyWatched(createOverlayState(), info);
+  assert.equal(next.phase, "watched");
+  assert.equal(next.data, info);
+  assert.equal(next.alreadyWatched, true);
+});
+
+test("markAlreadyWatched defaults data to null when no info is given", () => {
+  const next = markAlreadyWatched(createOverlayState(), null);
+  assert.equal(next.data, null);
+  assert.equal(next.alreadyWatched, true);
+});
+
+test("setAlreadyWatchedFlag sets alreadyWatched without touching phase/data", () => {
+  const state = applyVerdictResult(createOverlayState(), { novelty: 5 });
+  const next = setAlreadyWatchedFlag(state);
+  assert.equal(next.alreadyWatched, true);
+  assert.equal(next.phase, state.phase);
+  assert.equal(next.data, state.data);
 });
 
 test("clearWatchNote resets watchNote to null without touching anything else", () => {

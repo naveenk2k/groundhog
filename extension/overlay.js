@@ -685,6 +685,9 @@ if (typeof module !== "undefined" && module.exports) {
     markWatchedBtn.className = "ghog-mark-watched-btn";
     markWatchedBtn.textContent = "Mark as watched";
     markWatchedBtn.addEventListener("click", () => {
+      if (state.alreadyWatched) {
+        return;
+      }
       if (typeof GroundhogOverlay.onMarkWatchedClick === "function" && currentVideoId) {
         GroundhogOverlay.onMarkWatchedClick(currentVideoId);
       }
@@ -724,6 +727,44 @@ if (typeof module !== "undefined" && module.exports) {
       p.appendChild(label);
       p.appendChild(dots);
       body.appendChild(p);
+      return;
+    }
+
+    if (state.phase === "watched") {
+      // content.js's pre-check (GROUNDHOG_VIDEO_LOOKUP) found this video
+      // already in the corpus before ever requesting a verdict - no Gemini
+      // call was made for it, and there's no verdict to show, just a calm
+      // confirmation that it's already part of your watch history.
+      const wrap = document.createElement("div");
+      wrap.className = "ghog-cant-evaluate";
+
+      const icon = document.createElement("div");
+      icon.className = "ghog-cant-evaluate-icon";
+      icon.setAttribute("aria-hidden", "true");
+      icon.textContent = "✓";
+      wrap.appendChild(icon);
+
+      const text = document.createElement("div");
+      text.className = "ghog-cant-evaluate-text";
+
+      const label = document.createElement("div");
+      label.className = "ghog-cant-evaluate-label";
+      label.textContent = "Already in your watch history";
+      text.appendChild(label);
+
+      const info = state.data || {};
+      if (info.watched_at) {
+        const date = new Date(info.watched_at);
+        if (!isNaN(date.getTime())) {
+          const reason = document.createElement("div");
+          reason.className = "ghog-cant-evaluate-reason";
+          reason.textContent = "Watched " + date.toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" });
+          text.appendChild(reason);
+        }
+      }
+
+      wrap.appendChild(text);
+      body.appendChild(wrap);
       return;
     }
 
@@ -932,6 +973,18 @@ if (typeof module !== "undefined" && module.exports) {
     if (state.phase === "stale") {
       return;
     }
+    // Button state is derived from state.alreadyWatched on every render,
+    // rather than mutated directly wherever a request happens to complete -
+    // that's what previously let the button silently revert to a plain,
+    // clickable "Mark as watched" once the transient watchNote faded, even
+    // though the video really was already added. The one exception is the
+    // transient "Marking as watched…" text set directly in the click
+    // handler below - nothing changes `state` between the click and the
+    // result arriving, so it stays on screen until the next render() call
+    // overwrites it with whatever alreadyWatched says at that point.
+    els.markWatchedBtn.disabled = state.alreadyWatched;
+    els.markWatchedBtn.textContent = state.alreadyWatched ? "Already watched" : "Mark as watched";
+
     els.watchNote.classList.toggle("ghog-visible", Boolean(state.watchNote));
     if (state.watchNote) {
       els.watchNote.textContent = state.watchNote.message;
@@ -947,6 +1000,9 @@ if (typeof module !== "undefined" && module.exports) {
     }
     if (state.phase === "stale") {
       return "Groundhog: needs a refresh";
+    }
+    if (state.phase === "watched") {
+      return "Groundhog: already watched";
     }
     const verdict = state.data || {};
     if (typeof verdict.novelty === "number") {
@@ -1004,10 +1060,6 @@ if (typeof module !== "undefined" && module.exports) {
         watchNoteTimer = null;
       }
       render();
-      if (els) {
-        els.markWatchedBtn.disabled = false;
-        els.markWatchedBtn.textContent = "Mark as watched";
-      }
     },
     /** Called when the background worker's /verdict response (or an error) comes back for `videoId`. Ignored if the user has since navigated to a different video (stale response). */
     setResult(videoId, result) {
@@ -1018,13 +1070,30 @@ if (typeof module !== "undefined" && module.exports) {
       render();
     },
     /**
+     * Called when content.js's pre-check (GROUNDHOG_VIDEO_LOOKUP, fired
+     * before ever requesting a verdict - see content.js's handleNavigation)
+     * finds this video already in the corpus. Moves straight to the
+     * "watched" phase, skipping "checking"/a verdict/Gemini entirely.
+     * Ignored if the user has since navigated to a different video.
+     */
+    showAlreadyWatched(videoId, info) {
+      if (videoId !== currentVideoId) {
+        return;
+      }
+      state = markAlreadyWatched(state, info);
+      render();
+    },
+    /**
      * Called when background.js's postVideoWatched result (either the
      * automatic watch-threshold path or a manual "Mark as watched" click)
      * comes back for `videoId`. Ignored if the user has since navigated to
      * a different video. Shows the note for WATCH_NOTE_TIMEOUT_MS, then
      * auto-clears it - a stray earlier timer is cleared first so two
      * results arriving close together don't have the first one's timer
-     * wipe out the second one's note early.
+     * wipe out the second one's note early. A successful add also flips
+     * alreadyWatched permanently (renderFooter derives the button's label
+     * from that, not from the note's own lifetime), so the button doesn't
+     * revert to a plain clickable "Mark as watched" once the note fades.
      */
     setWatchedResult(videoId, result) {
       if (videoId !== currentVideoId) {
@@ -1035,11 +1104,10 @@ if (typeof module !== "undefined" && module.exports) {
         watchNoteTimer = null;
       }
       state = setWatchNote(state, describeWatchedResult(result));
-      render();
-      if (els) {
-        els.markWatchedBtn.disabled = false;
-        els.markWatchedBtn.textContent = "Mark as watched";
+      if (result && result.added) {
+        state = setAlreadyWatchedFlag(state);
       }
+      render();
       watchNoteTimer = setTimeout(() => {
         state = clearWatchNote(state);
         watchNoteTimer = null;

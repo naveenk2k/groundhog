@@ -183,6 +183,17 @@ class CorpusTest(unittest.TestCase):
         [top] = corpus.query_similar(self.conn, fake_embedding, k=1)
         self.assertEqual(top.video_id, "fake_embedding_video")
 
+    def test_find_video_returns_none_when_not_present(self):
+        self.assertIsNone(corpus.find_video(self.conn, "not_in_corpus"))
+
+    def test_find_video_returns_title_and_watched_at_when_present(self):
+        found = corpus.find_video(self.conn, "k8s_intro")
+        self.assertEqual(found, {
+            "video_id": "k8s_intro",
+            "title": "Kubernetes Basics for Beginners",
+            "watched_at": "2026-01-07T10:00:00Z",
+        })
+
 
 class CorpusMigrationTest(unittest.TestCase):
     """A corpus.db created before the `creator` column existed must keep

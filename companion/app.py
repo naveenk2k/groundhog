@@ -124,6 +124,22 @@ async def verdict_endpoint(body: VerdictRequest) -> dict:
     return run_verdict_pipeline(_get_corpus_conn(), body.video_id, body.k, body.model)
 
 
+@app.get("/videos/{video_id}")
+async def get_video(video_id: str) -> dict:
+    """Look up whether a video is already in the corpus, with none of
+    /verdict's embedding/similarity-search/Gemini cost.
+
+    Lets the extension skip the full verdict check entirely for a video
+    already watched (either auto-added or via "Mark as watched" - see
+    /videos/watched below), and lets the overlay reflect that up front
+    instead of always defaulting to "Mark as watched".
+    """
+    found = corpus.find_video(_get_corpus_conn(), video_id)
+    if found is None:
+        return {"found": False}
+    return {"found": True, "title": found["title"], "watched_at": found["watched_at"]}
+
+
 class WatchedVideoRequest(BaseModel):
     video_id: str
 

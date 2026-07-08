@@ -272,6 +272,25 @@ def insert_video(
 # --- Query -----------------------------------------------------------------
 
 
+def find_video(conn: apsw.Connection, video_id: str) -> Optional[dict]:
+    """Look up a single video by ID, with none of query_similar's
+    embedding/similarity-search cost - used to answer "is this video already
+    in my watch history" up front, before doing any of the real /verdict
+    work (see the extension's GROUNDHOG_VIDEO_LOOKUP), so that check is
+    cheap enough to run on every video-opened navigation.
+
+    Returns None if not found, else {"video_id", "title", "watched_at"}.
+    """
+    row = conn.execute(
+        "SELECT video_id, title, watched_at FROM videos WHERE video_id = ?",
+        (video_id,),
+    ).fetchone()
+    if row is None:
+        return None
+    found_video_id, title, watched_at = row
+    return {"video_id": found_video_id, "title": title, "watched_at": watched_at}
+
+
 def query_similar(
     conn: apsw.Connection, embedding: Sequence[float], k: int
 ) -> list[CorpusMatch]:

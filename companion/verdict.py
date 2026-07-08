@@ -176,6 +176,12 @@ class Verdict(TypedDict):
 
 class VerdictErrorResult(TypedDict):
     error: str
+    # Machine-readable category alongside the human-readable `error` prose -
+    # see overlay.js's classifyOverlayError, which switches on this instead
+    # of re-deriving the category by pattern-matching the prose string (the
+    # previous approach: a wording change on this side could silently break
+    # the overlay's classification with no shared contract catching it).
+    code: str
 
 
 @dataclass
@@ -277,7 +283,7 @@ def get_verdict(
         active_client = client if client is not None else genai.Client()
     except Exception as e:  # noqa: BLE001 - e.g. no API key resolvable at all
         logger.error("could not create Gemini client: %s", e)
-        return {"error": "Groundhog isn't configured correctly."}
+        return {"error": "Groundhog isn't configured correctly.", "code": "misconfigured"}
 
     user_message = _build_user_message(new_video, matches)
 
@@ -294,27 +300,30 @@ def get_verdict(
         )
     except httpx.TimeoutException as e:
         logger.error("Gemini call timed out after %ss: %s", timeout, e)
-        return {"error": "Groundhog took too long to respond."}
+        return {"error": "Groundhog took too long to respond.", "code": "timeout"}
     except errors.ClientError as e:
         logger.error("Gemini API client error (%s): %s", e.code, e.message)
         if e.code in _TRANSIENT_GEMINI_CODES:
-            return {"error": "Gemini is busy right now - try again in a bit."}
-        return {"error": "Couldn't reach the verdict service."}
+            return {"error": "Gemini is busy right now - try again in a bit.", "code": "gemini_busy"}
+        return {"error": "Couldn't reach the verdict service.", "code": "verdict_service_unreachable"}
     except errors.ServerError as e:
         logger.error("Gemini API server error (%s): %s", e.code, e.message)
         if e.code in _TRANSIENT_GEMINI_CODES:
-            return {"error": "Gemini is busy right now - try again in a bit."}
-        return {"error": "Couldn't reach the verdict service."}
+            return {"error": "Gemini is busy right now - try again in a bit.", "code": "gemini_busy"}
+        return {"error": "Couldn't reach the verdict service.", "code": "verdict_service_unreachable"}
     except errors.APIError as e:
         logger.error("Gemini API error (%s): %s", e.code, e.message)
-        return {"error": "Couldn't reach the verdict service."}
+        return {"error": "Couldn't reach the verdict service.", "code": "verdict_service_unreachable"}
     except Exception as e:  # noqa: BLE001 - e.g. a connection failure from the transport
         logger.error("Gemini call failed: %s", e)
-        return {"error": "Couldn't reach the verdict service."}
+        return {"error": "Couldn't reach the verdict service.", "code": "verdict_service_unreachable"}
 
     if not response.parsed:
         logger.error("Gemini did not return a parseable verdict: %r", response)
-        return {"error": "Groundhog got an unexpected response from the verdict service."}
+        return {
+            "error": "Groundhog got an unexpected response from the verdict service.",
+            "code": "unexpected_verdict_response",
+        }
 
     data = response.parsed
     return {

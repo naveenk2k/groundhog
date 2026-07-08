@@ -73,7 +73,9 @@ class VerdictPipelineTest(unittest.TestCase):
 
         result = verdict_pipeline.run_verdict_pipeline(self.conn, "vid123")
 
-        self.assertEqual(result, {"error": "No transcript available for this video."})
+        self.assertEqual(
+            result, {"error": "No transcript available for this video.", "code": "no_transcript"}
+        )
 
     @patch("companion.verdict_pipeline.fetch_transcript")
     def test_add_watched_video_inserts_into_corpus(self, mock_fetch):

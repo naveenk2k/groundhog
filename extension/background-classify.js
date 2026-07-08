@@ -33,7 +33,11 @@ const VERDICT_TIMEOUT_MS = 60000;
  */
 function classifyVerdictResponse(response) {
   if (!response.ok) {
-    return { error: "companion responded with status " + response.status };
+    // 429 (rate-limited) is a transient, retry-worthy state - a meaningfully
+    // different story from a generic 5xx, which suggests something's
+    // actually broken. Matches overlay.js's classifyOverlayError codes.
+    const code = response.status === 429 ? "companion_rate_limited" : "companion_error_status";
+    return { error: "companion responded with status " + response.status, code };
   }
   return null;
 }
@@ -47,9 +51,12 @@ function classifyVerdictResponse(response) {
  */
 function classifyVerdictError(err) {
   if (err && err.name === "AbortError") {
-    return { error: "companion request timed out after " + (VERDICT_TIMEOUT_MS / 1000) + "s" };
+    return {
+      error: "companion request timed out after " + (VERDICT_TIMEOUT_MS / 1000) + "s",
+      code: "timeout",
+    };
   }
-  return { error: "companion request failed" };
+  return { error: "companion request failed", code: "companion_unreachable" };
 }
 
 if (typeof module !== "undefined" && module.exports) {

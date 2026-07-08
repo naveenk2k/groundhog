@@ -33,15 +33,26 @@ test("classifyVerdictResponse: ok response returns null (caller should use respo
 test("classifyVerdictResponse: non-ok response returns the companion-status error, for various status codes", () => {
   assert.deepStrictEqual(classifyVerdictResponse({ ok: false, status: 500 }), {
     error: "companion responded with status 500",
+    code: "companion_error_status",
   });
   assert.deepStrictEqual(classifyVerdictResponse({ ok: false, status: 404 }), {
     error: "companion responded with status 404",
+    code: "companion_error_status",
   });
   assert.deepStrictEqual(classifyVerdictResponse({ ok: false, status: 401 }), {
     error: "companion responded with status 401",
+    code: "companion_error_status",
   });
   assert.deepStrictEqual(classifyVerdictResponse({ ok: false, status: 503 }), {
     error: "companion responded with status 503",
+    code: "companion_error_status",
+  });
+});
+
+test("classifyVerdictResponse: 429 gets its own rate-limited code, distinct from a generic error status", () => {
+  assert.deepStrictEqual(classifyVerdictResponse({ ok: false, status: 429 }), {
+    error: "companion responded with status 429",
+    code: "companion_rate_limited",
   });
 });
 
@@ -50,38 +61,52 @@ test("classifyVerdictError: AbortError maps to the timeout message, in seconds",
   abortErr.name = "AbortError";
   assert.deepStrictEqual(classifyVerdictError(abortErr), {
     error: "companion request timed out after 60s",
+    code: "timeout",
   });
 });
 
 test("classifyVerdictError: any other error maps to the generic failure message", () => {
   assert.deepStrictEqual(classifyVerdictError(new TypeError("Failed to fetch")), {
     error: "companion request failed",
+    code: "companion_unreachable",
   });
   assert.deepStrictEqual(classifyVerdictError(new Error("NetworkError when attempting to fetch resource.")), {
     error: "companion request failed",
+    code: "companion_unreachable",
   });
-  assert.deepStrictEqual(classifyVerdictError(null), { error: "companion request failed" });
-  assert.deepStrictEqual(classifyVerdictError(undefined), { error: "companion request failed" });
+  assert.deepStrictEqual(classifyVerdictError(null), {
+    error: "companion request failed",
+    code: "companion_unreachable",
+  });
+  assert.deepStrictEqual(classifyVerdictError(undefined), {
+    error: "companion request failed",
+    code: "companion_unreachable",
+  });
 });
 
-// Confirms the output of these functions still routes through overlay.js's
-// classifyOverlayError to the same user-facing reasons it always has -
-// guards against wording drift during the extraction.
-test("outputs classify the same as before through overlay.js's classifyOverlayError", () => {
+// Confirms the output of these functions still classifies correctly through
+// overlay.js's classifyOverlayError, via the `code` field (issue #28) - the
+// same contract the two sides now share instead of relying on wording alone.
+test("outputs classify correctly through overlay.js's classifyOverlayError, via code", () => {
   const { classifyOverlayError } = require("./overlay.js");
 
   const abortErr = new Error("aborted");
   abortErr.name = "AbortError";
+  const timeoutResult = classifyVerdictError(abortErr);
   assert.equal(
-    classifyOverlayError(classifyVerdictError(abortErr).error),
+    classifyOverlayError(timeoutResult.error, timeoutResult.code),
     "Groundhog took too long to respond."
   );
+
+  const unreachableResult = classifyVerdictError(new Error("boom"));
   assert.equal(
-    classifyOverlayError(classifyVerdictError(new Error("boom")).error),
+    classifyOverlayError(unreachableResult.error, unreachableResult.code),
     "Couldn't reach the Groundhog companion."
   );
+
+  const statusResult = classifyVerdictResponse({ ok: false, status: 500 });
   assert.equal(
-    classifyOverlayError(classifyVerdictResponse({ ok: false, status: 500 }).error),
+    classifyOverlayError(statusResult.error, statusResult.code),
     "Groundhog companion returned an error."
   );
 });

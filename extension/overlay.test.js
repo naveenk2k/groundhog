@@ -18,6 +18,45 @@ const assert = require("node:assert/strict");
 
 const { classifyOverlayError } = require("./overlay.js");
 
+test("a recognized code wins over substring matching, even with mismatched/garbage message text", () => {
+  // Deliberately mismatched raw message per code, to prove code (not the
+  // substring fallback) is what's actually driving the result (issue #28).
+  assert.equal(
+    classifyOverlayError("this text matches nothing recognizable", "no_transcript"),
+    "No transcript available for this video."
+  );
+  assert.equal(classifyOverlayError("", "timeout"), "Groundhog took too long to respond.");
+  assert.equal(classifyOverlayError("gemini mentioned here", "gemini_busy"), "Gemini is busy right now - try again in a bit.");
+  assert.equal(
+    classifyOverlayError("irrelevant", "unexpected_verdict_response"),
+    "Groundhog got an unexpected response from the verdict service."
+  );
+  assert.equal(
+    classifyOverlayError("irrelevant", "companion_rate_limited"),
+    "Groundhog is being rate-limited - try again shortly."
+  );
+  assert.equal(classifyOverlayError("irrelevant", "not_configured"), "Groundhog isn't set up yet.");
+  assert.equal(
+    classifyOverlayError("irrelevant", "misconfigured"),
+    "Groundhog isn't configured correctly."
+  );
+});
+
+test("an unrecognized code falls back to substring matching on the message", () => {
+  assert.equal(
+    classifyOverlayError("companion request timed out after 60s", "some_future_code_this_version_does_not_know"),
+    "Groundhog took too long to respond."
+  );
+});
+
+test("a missing code falls back to substring matching, same as before issue #28", () => {
+  assert.equal(
+    classifyOverlayError("companion request timed out after 60s"),
+    "Groundhog took too long to respond."
+  );
+  assert.equal(classifyOverlayError("companion request timed out after 60s", undefined), "Groundhog took too long to respond.");
+});
+
 test("no-transcript errors map to a transcript-specific reason", () => {
   assert.equal(
     classifyOverlayError("no transcript available: no English captions available"),

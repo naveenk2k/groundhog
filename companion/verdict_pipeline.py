@@ -102,7 +102,7 @@ def run_verdict_pipeline(
     fetched = _cached_fetch_transcript(video_id)
     if fetched["transcript"] is None:
         logger.error("no transcript for video %s: %s", video_id, fetched["reason"])
-        return {"error": "No transcript available for this video."}
+        return {"error": "No transcript available for this video.", "code": "no_transcript"}
 
     embedding = corpus.embed_text(fetched["transcript"])
     matches = corpus.query_similar(conn, embedding, k)

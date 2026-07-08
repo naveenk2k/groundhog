@@ -21,21 +21,51 @@
  */
 
 /**
+ * Machine-readable `code` -> the same one-line reasons the substring
+ * matching below produces, for every category background.js/verdict.py
+ * currently attach one to (issue #28). Kept as a flat lookup rather than
+ * folded into the substring-matching chain so it's obvious at a glance
+ * which codes are recognized, and so a typo'd/unrecognized code cleanly
+ * falls through to the substring-matching fallback instead of silently
+ * mapping to nothing.
+ */
+const _CODE_TO_REASON = {
+  no_transcript: "No transcript available for this video.",
+  timeout: "Groundhog took too long to respond.",
+  not_configured: "Groundhog isn't set up yet.",
+  misconfigured: "Groundhog isn't configured correctly.",
+  companion_unreachable: "Couldn't reach the Groundhog companion.",
+  companion_rate_limited: "Groundhog is being rate-limited - try again shortly.",
+  companion_error_status: "Groundhog companion returned an error.",
+  gemini_busy: "Gemini is busy right now - try again in a bit.",
+  verdict_service_unreachable: "Couldn't reach the verdict service.",
+  unexpected_verdict_response: "Groundhog got an unexpected response from the verdict service.",
+};
+
+/**
  * Turn a raw error string (from companion/app.py's `{error: "..."}`,
  * companion/verdict.py's Gemini failures, or background.js's own
  * companion-unreachable/timeout messages) into a short, calm, one-line
  * reason for the "can't evaluate" badge.
  *
- * Deliberately pattern-matching on recognizable substrings rather than an
- * exhaustive enum: the known failure sources (no transcript, companion
- * unreachable/timed out, Gemini API failure) each produce error text of a
- * wildly different shape and verbosity, and this only needs to degrade
- * gracefully for anything unrecognized - not enumerate every possible
- * internal exception string. Kept outside the IIFE below (and exported via
+ * Prefers `code` (a machine-readable category attached alongside `raw`'s
+ * human-readable prose - see `_CODE_TO_REASON` above) when it's present and
+ * recognized. Falls back to pattern-matching recognizable substrings in
+ * `raw` otherwise - either because `code` is missing (an older code path
+ * that predates issue #28) or unrecognized (defensive: a future code this
+ * version doesn't know about yet shouldn't produce a blank/broken badge).
+ * The known failure sources each produce error text of a wildly different
+ * shape and verbosity, and the fallback only needs to degrade gracefully
+ * for anything unrecognized - not enumerate every possible internal
+ * exception string. Kept outside the IIFE below (and exported via
  * module.exports) so it's plain, DOM-free, testable logic - same pattern as
  * overlay-state.js/video-id.js/watch-tracker.js.
  */
-function classifyOverlayError(raw) {
+function classifyOverlayError(raw, code) {
+  if (typeof code === "string" && Object.prototype.hasOwnProperty.call(_CODE_TO_REASON, code)) {
+    return _CODE_TO_REASON[code];
+  }
+
   if (typeof raw !== "string" || !raw.trim()) {
     return "Groundhog couldn't evaluate this video.";
   }
@@ -547,7 +577,7 @@ if (typeof module !== "undefined" && module.exports) {
 
       const reason = document.createElement("div");
       reason.className = "ghog-cant-evaluate-reason";
-      reason.textContent = classifyOverlayError(state.data);
+      reason.textContent = classifyOverlayError(state.data.message, state.data.code);
       text.appendChild(reason);
 
       wrap.appendChild(text);

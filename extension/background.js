@@ -70,11 +70,10 @@ async function readModel() {
 }
 
 // User-facing copy for the "no secret yet" case - rendered directly in
-// overlay.js's error body (see overlay-state.js's applyVerdictResult, which
-// takes `result.error` as the display string), so it needs to read as an
-// instruction a real user can act on. `notConfigured: true` travels
-// alongside it so overlay.js can branch on this specific case without
-// string-matching the message.
+// overlay.js's error body, so it needs to read as an instruction a real user
+// can act on. The "not_configured" code travels alongside it so overlay.js's
+// classifyOverlayError can branch on this specific case without
+// string-matching the message (see issue #28).
 const NOT_CONFIGURED_MESSAGE =
   "Groundhog isn't set up yet - open the extension's options page and paste your secret from .groundhog-secret.";
 
@@ -91,7 +90,7 @@ async function requestVerdict(videoId) {
       "Groundhog: no secret configured in chrome.storage.local (key 'groundhogSecret'); " +
         "skipping verdict request for video " + videoId
     );
-    return { error: NOT_CONFIGURED_MESSAGE, notConfigured: true };
+    return { error: NOT_CONFIGURED_MESSAGE, code: "not_configured" };
   }
   const k = await readK();
   const model = await readModel();

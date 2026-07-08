@@ -9,7 +9,7 @@ timeout, and an unparseable response getting its own distinct message.
 """
 
 import unittest
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from google.genai import errors
 import httpx
@@ -29,6 +29,14 @@ def _fake_client(generate_content_result=None, generate_content_side_effect=None
 
 
 class GetVerdictTest(unittest.TestCase):
+    def test_client_construction_failure_maps_to_misconfigured(self):
+        with patch("companion.verdict.genai.Client", side_effect=Exception("no API key resolvable")):
+            result = verdict.get_verdict(NEW_VIDEO, [])
+        self.assertEqual(
+            result,
+            {"error": "Groundhog isn't configured correctly.", "code": "misconfigured"},
+        )
+
     def test_returns_verdict_on_success(self):
         response = MagicMock()
         response.parsed = {
@@ -50,33 +58,45 @@ class GetVerdictTest(unittest.TestCase):
             generate_content_side_effect=errors.ClientError(429, {"message": "rate limited"})
         )
         result = verdict.get_verdict(NEW_VIDEO, [], client=client)
-        self.assertEqual(result, {"error": "Gemini is busy right now - try again in a bit."})
+        self.assertEqual(
+            result,
+            {"error": "Gemini is busy right now - try again in a bit.", "code": "gemini_busy"},
+        )
 
     def test_gemini_503_maps_to_busy_message(self):
         client = _fake_client(
             generate_content_side_effect=errors.ServerError(503, {"message": "overloaded"})
         )
         result = verdict.get_verdict(NEW_VIDEO, [], client=client)
-        self.assertEqual(result, {"error": "Gemini is busy right now - try again in a bit."})
+        self.assertEqual(
+            result,
+            {"error": "Gemini is busy right now - try again in a bit.", "code": "gemini_busy"},
+        )
 
     def test_non_transient_client_error_maps_to_generic_message(self):
         client = _fake_client(
             generate_content_side_effect=errors.ClientError(400, {"message": "bad request"})
         )
         result = verdict.get_verdict(NEW_VIDEO, [], client=client)
-        self.assertEqual(result, {"error": "Couldn't reach the verdict service."})
+        self.assertEqual(
+            result,
+            {"error": "Couldn't reach the verdict service.", "code": "verdict_service_unreachable"},
+        )
 
     def test_non_transient_server_error_maps_to_generic_message(self):
         client = _fake_client(
             generate_content_side_effect=errors.ServerError(500, {"message": "internal error"})
         )
         result = verdict.get_verdict(NEW_VIDEO, [], client=client)
-        self.assertEqual(result, {"error": "Couldn't reach the verdict service."})
+        self.assertEqual(
+            result,
+            {"error": "Couldn't reach the verdict service.", "code": "verdict_service_unreachable"},
+        )
 
     def test_timeout_maps_to_distinct_message(self):
         client = _fake_client(generate_content_side_effect=httpx.TimeoutException("timed out"))
         result = verdict.get_verdict(NEW_VIDEO, [], client=client, timeout=1.0)
-        self.assertEqual(result, {"error": "Groundhog took too long to respond."})
+        self.assertEqual(result, {"error": "Groundhog took too long to respond.", "code": "timeout"})
 
     def test_unparseable_response_maps_to_distinct_message(self):
         response = MagicMock()
@@ -86,7 +106,11 @@ class GetVerdictTest(unittest.TestCase):
         result = verdict.get_verdict(NEW_VIDEO, [], client=client)
 
         self.assertEqual(
-            result, {"error": "Groundhog got an unexpected response from the verdict service."}
+            result,
+            {
+                "error": "Groundhog got an unexpected response from the verdict service.",
+                "code": "unexpected_verdict_response",
+            },
         )
 
 

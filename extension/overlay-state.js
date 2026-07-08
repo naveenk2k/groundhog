@@ -8,10 +8,16 @@
  * Shape of the state object:
  *   {
  *     phase: "checking" | "verdict" | "error",
- *     data: null | <verdict object from /verdict> | <error string>,
+ *     data: null | <verdict object from /verdict> | <{ message, code } for phase "error">,
  *     collapsed: boolean,   // true = shown as a small corner badge only
  *     dismissed: boolean,   // true = fully hidden until the next navigation
  *   }
+ *
+ * `code` (phase "error" only) is the machine-readable category alongside
+ * `message`'s human-readable prose - see overlay.js's classifyOverlayError,
+ * which prefers `code` when present rather than pattern-matching `message`
+ * (issue #28). `code` may be `undefined` for a result that predates this or
+ * omits it; classifyOverlayError falls back to substring matching in that case.
  *
  * Lifecycle: content.js calls createOverlayState() fresh on every navigation
  * to a video it actually posts "opened" for (see content.js's
@@ -43,7 +49,7 @@ function createOverlayState() {
  */
 function applyVerdictResult(state, result) {
   if (result && typeof result === "object" && typeof result.error === "string") {
-    return { ...state, phase: "error", data: result.error };
+    return { ...state, phase: "error", data: { message: result.error, code: result.code } };
   }
   return { ...state, phase: "verdict", data: result };
 }

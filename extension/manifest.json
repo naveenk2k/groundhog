@@ -22,5 +22,8 @@
       "js": ["video-id.js", "watch-tracker.js", "overlay-state.js", "overlay.js", "content.js"],
       "run_at": "document_idle"
     }
-  ]
+  ],
+  "icons": {
+    "512": "icons/groundhog.png"
+  }
 }

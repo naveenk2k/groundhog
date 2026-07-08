@@ -16,7 +16,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 
-const { classifyOverlayError, isSetupError } = require("./overlay.js");
+const { classifyOverlayError, isSetupError, isRetryableError } = require("./overlay.js");
 
 test("a recognized code wins over substring matching, even with mismatched/garbage message text", () => {
   // Deliberately mismatched raw message per code, to prove code (not the
@@ -238,4 +238,31 @@ test("isSetupError: falls back to substring matching when code is missing", () =
   assert.equal(isSetupError("Groundhog isn't configured correctly."), true);
   assert.equal(isSetupError("companion request failed"), false);
   assert.equal(isSetupError("companion request timed out after 60s"), false);
+});
+
+test("isRetryableError: false for codes where retrying the same video can't help", () => {
+  const nonRetryable = ["no_transcript", "not_configured", "misconfigured", "unexpected_verdict_response"];
+  for (const code of nonRetryable) {
+    assert.equal(isRetryableError("irrelevant", code), false, `expected code "${code}" to not be retryable`);
+  }
+});
+
+test("isRetryableError: true for transient/retry-worthy codes", () => {
+  const retryable = [
+    "timeout",
+    "companion_unreachable",
+    "companion_rate_limited",
+    "companion_error_status",
+    "gemini_busy",
+    "verdict_service_unreachable",
+  ];
+  for (const code of retryable) {
+    assert.equal(isRetryableError("irrelevant", code), true, `expected code "${code}" to be retryable`);
+  }
+});
+
+test("isRetryableError: falls back to !isSetupError when code is missing/unrecognized", () => {
+  assert.equal(isRetryableError("Groundhog isn't set up yet - open the extension's options page."), false);
+  assert.equal(isRetryableError("companion request failed"), true);
+  assert.equal(isRetryableError("irrelevant", "some_future_code_this_version_does_not_know"), true);
 });

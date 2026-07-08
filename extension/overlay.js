@@ -164,6 +164,44 @@ function classifyOverlayError(raw, code) {
 }
 
 /**
+ * Error codes where retrying the same video is pointless, so the "can't
+ * evaluate" badge shouldn't offer a "Retry" button for them:
+ *
+ * - no_transcript: the video itself has no transcript - that won't change
+ *   on a second attempt.
+ * - not_configured / misconfigured: setup problems - "Open settings" (see
+ *   isSetupError below) is the useful action, not a retry.
+ * - unexpected_verdict_response: a schema mismatch between the companion
+ *   and Gemini's response - a companion/prompt bug, not the kind of
+ *   transient failure a retry fixes.
+ *
+ * Every other known code (timeouts, companion/Gemini unreachability or
+ * rate-limiting) is transient enough that a second attempt is worth
+ * offering.
+ */
+const _NON_RETRYABLE_CODES = new Set([
+  "no_transcript",
+  "not_configured",
+  "misconfigured",
+  "unexpected_verdict_response",
+]);
+
+/**
+ * True if the "can't evaluate" badge should offer a "Retry" button for this
+ * error. Prefers `code`, same precedence as classifyOverlayError/
+ * isSetupError. Falls back to "retryable unless it's a setup error" for a
+ * missing/unrecognized code, rather than hiding retry by default - an older
+ * or unrecognized error shape shouldn't silently lose a legitimately useful
+ * action.
+ */
+function isRetryableError(raw, code) {
+  if (typeof code === "string" && Object.prototype.hasOwnProperty.call(_CODE_TO_REASON, code)) {
+    return !_NON_RETRYABLE_CODES.has(code);
+  }
+  return !isSetupError(raw, code);
+}
+
+/**
  * True if this error is a setup problem - missing secret or misconfigured
  * Gemini key - the only two categories "open the options page" actually
  * fixes. Every other error (companion unreachable, timeout, no transcript,
@@ -190,7 +228,7 @@ function isSetupError(raw, code) {
 }
 
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = { classifyOverlayError, isSetupError };
+  module.exports = { classifyOverlayError, isSetupError, isRetryableError };
 }
 
 (function () {
@@ -726,6 +764,16 @@ if (typeof module !== "undefined" && module.exports) {
           }
         });
         text.appendChild(action);
+      } else if (isRetryableError(state.data.message, state.data.code)) {
+        const action = document.createElement("button");
+        action.className = "ghog-cant-evaluate-action";
+        action.textContent = "Retry";
+        action.addEventListener("click", () => {
+          if (typeof GroundhogOverlay.onRetryClick === "function" && currentVideoId) {
+            GroundhogOverlay.onRetryClick(currentVideoId);
+          }
+        });
+        text.appendChild(action);
       }
 
       wrap.appendChild(text);
@@ -875,6 +923,15 @@ if (typeof module !== "undefined" && module.exports) {
      * reason onOpenSettingsClick does.
      */
     onMarkWatchedClick: null,
+    /**
+     * Set by content.js to a function that re-fires a fresh
+     * GROUNDHOG_VIDEO_OPENED request for the given video ID, bypassing
+     * content.js's lastPostedVideoId dedupe (which exists to skip no-op
+     * navigations, not to block an explicit retry) - see content.js's
+     * onRetryClick. Called when the user clicks "Retry" on a
+     * retry-worthy error (see isRetryableError above).
+     */
+    onRetryClick: null,
     /** Called on every fresh video-opened request - see content.js. Always starts un-collapsed, un-dismissed, showing "checking...". */
     reset(videoId) {
       currentVideoId = videoId;

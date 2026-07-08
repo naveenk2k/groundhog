@@ -45,6 +45,16 @@ GroundhogOverlay.onMarkWatchedClick = (videoId) => {
   chrome.runtime.sendMessage({ type: "GROUNDHOG_VIDEO_WATCHED", videoId });
 };
 
+// Lets the overlay's "Retry" button (retry-worthy errors only - see
+// overlay.js's isRetryableError) re-fire a fresh verdict check for the same
+// video. Deliberately bypasses lastPostedVideoId below - that dedupe exists
+// to skip no-op navigations (e.g. only `&t=` changed), not to block an
+// explicit user-initiated retry for the video already on screen.
+GroundhogOverlay.onRetryClick = (videoId) => {
+  GroundhogOverlay.reset(videoId);
+  chrome.runtime.sendMessage({ type: "GROUNDHOG_VIDEO_OPENED", videoId });
+};
+
 function handleNavigation() {
   const videoId = extractVideoId(window.location.href);
 

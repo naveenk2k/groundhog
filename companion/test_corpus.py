@@ -11,6 +11,7 @@ Run directly: python -m companion.test_corpus
 import os
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from companion import corpus
 
@@ -220,6 +221,49 @@ class CorpusMigrationTest(unittest.TestCase):
         self.assertEqual(top.video_id, "pre_migration")
         self.assertEqual(top.creator, "")
         conn.close()
+
+
+class GetModelOfflineFallbackTest(unittest.TestCase):
+    """get_model() tries HF_HUB_OFFLINE first (skips huggingface_hub's
+    per-file cache-validation round trip) and falls back to a normal,
+    network-touching load if the model isn't cached locally at all."""
+
+    def setUp(self):
+        self._saved_model = corpus._model
+        corpus._model = None
+        self._saved_offline_env = os.environ.pop("HF_HUB_OFFLINE", None)
+
+    def tearDown(self):
+        corpus._model = self._saved_model
+        if self._saved_offline_env is not None:
+            os.environ["HF_HUB_OFFLINE"] = self._saved_offline_env
+        else:
+            os.environ.pop("HF_HUB_OFFLINE", None)
+
+    def test_falls_back_to_online_load_when_not_cached(self):
+        fake_model = object()
+        with patch(
+            "sentence_transformers.SentenceTransformer",
+            side_effect=[OSError("not cached locally"), fake_model],
+        ) as mock_st:
+            result = corpus.get_model()
+
+        self.assertIs(result, fake_model)
+        self.assertEqual(mock_st.call_count, 2)
+        # The failed offline attempt's env var is cleared before the retry,
+        # so it doesn't linger and affect anything else in the process.
+        self.assertNotIn("HF_HUB_OFFLINE", os.environ)
+
+    def test_succeeds_offline_on_first_try_when_cached(self):
+        fake_model = object()
+        with patch(
+            "sentence_transformers.SentenceTransformer", return_value=fake_model
+        ) as mock_st:
+            result = corpus.get_model()
+
+        self.assertIs(result, fake_model)
+        mock_st.assert_called_once()
+        self.assertEqual(os.environ.get("HF_HUB_OFFLINE"), "1")
 
 
 if __name__ == "__main__":

@@ -31,6 +31,8 @@ it instead of the stdlib `sqlite3` module to sidestep that platform gap.
 
 from __future__ import annotations
 
+import logging
+import os
 from dataclasses import dataclass
 from typing import Optional, Sequence
 
@@ -38,6 +40,8 @@ import apsw
 import sqlite_vec
 
 from companion.config import CORPUS_DB_FILE, EMBEDDING_DIMENSIONS, EMBEDDING_MODEL_NAME
+
+logger = logging.getLogger(__name__)
 
 _SCHEMA = f"""
 CREATE TABLE IF NOT EXISTS videos (
@@ -95,12 +99,30 @@ def get_model():
     Loaded lazily (rather than at module import time) so importing this
     module - e.g. just to call insert_video with a precomputed embedding -
     doesn't pay the model-load cost if embed_text() is never called.
+
+    Tries HF_HUB_OFFLINE first: even when the model is already fully cached
+    locally, huggingface_hub still does a HEAD-request round trip per file
+    to validate the cache against the hub (confirmed live: ~30s across a
+    dozen-plus requests to huggingface.co on every companion restart, purely
+    to re-confirm files that were already there). Offline mode skips all of
+    that. Falls back to a normal (network-touching) load if offline mode
+    fails with OSError - the error huggingface_hub raises when it can't find
+    the model locally at all (e.g. this machine's very first run).
     """
     global _model
     if _model is None:
+        os.environ.setdefault("HF_HUB_OFFLINE", "1")
         from sentence_transformers import SentenceTransformer
 
-        _model = SentenceTransformer(EMBEDDING_MODEL_NAME)
+        try:
+            _model = SentenceTransformer(EMBEDDING_MODEL_NAME)
+        except OSError:
+            logger.info(
+                "%s not cached locally - falling back to an online load for this run",
+                EMBEDDING_MODEL_NAME,
+            )
+            os.environ.pop("HF_HUB_OFFLINE", None)
+            _model = SentenceTransformer(EMBEDDING_MODEL_NAME)
     return _model
 
 

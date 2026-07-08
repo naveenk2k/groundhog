@@ -5,14 +5,20 @@ checks a YouTube video against everything you've already watched, and tells
 you whether it's actually saying something new before you sink time into it.
 Open a video and, within a few seconds, an overlay tells you how novel it is
 compared to your watch history, how well-executed it is, and how deep it
-goes — plus a plain-language recommendation. It doesn't skip or hide
+goes, plus a plain-language recommendation. It doesn't skip or hide
 anything; you still decide what to watch. It only covers regular
 `youtube.com/watch` pages (not Shorts or embedded players).
 
 ![Groundhog overlay showing a verdict on a real YouTube video](docs/screenshots/overlay-in-context.jpeg)
 
-When it can't form an opinion — no transcript, the companion isn't running,
-or the model call failed — it shows the same neutral "can't evaluate" badge
+A closer look at a real verdict: scores plus a specific, grounded
+explanation that names the exact video it's comparing against, not just a
+generic "your watch history":
+
+![Close-up of a Groundhog verdict with novelty/execution/depth scores and a specific explanation](docs/screenshots/overlay-verdict-closeup.png)
+
+When it can't form an opinion (no transcript, the companion isn't running,
+or the model call failed), it shows the same neutral "can't evaluate" badge
 instead of guessing or failing silently:
 
 ![Groundhog overlay showing the "can't evaluate" state](docs/screenshots/overlay-cant-evaluate.png)
@@ -33,10 +39,10 @@ instead of guessing or failing silently:
 A browser extension can't write files, run Python, or keep a background
 process alive, so the actual work happens in a local companion process:
 
-- **Chrome extension** — a content script detects the video ID and tracks
+- **Chrome extension**: a content script detects the video ID and tracks
   watch progress on the page; a background service worker talks to the
   companion over HTTP; an options page holds the two user-facing settings.
-- **Python companion** — a FastAPI server that fetches the transcript via
+- **Python companion**: a FastAPI server that fetches the transcript via
   `yt-dlp`, embeds it locally with `sentence-transformers`, searches a
   `sqlite-vec` corpus of your watch history for the closest topical matches,
   and sends the new video's full transcript plus the matches' full
@@ -53,9 +59,11 @@ Gemini instead of Claude, why full transcripts instead of excerpts, why a
 
 ## Prerequisites
 
-- **macOS** — the companion auto-starts via a `launchd` LaunchAgent, which is
+- **macOS**: the companion auto-starts via a `launchd` LaunchAgent, which is
   macOS-specific.
-- **Python 3**
+- **[`uv`](https://docs.astral.sh/uv/getting-started/installation/)** (e.g.
+  `brew install uv`): `install.sh` uses it to provision Python 3.12 itself,
+  so you don't need any particular Python already installed.
 - **Chrome**
 - A free **Gemini API key** from [aistudio.google.com](https://aistudio.google.com)
 
@@ -72,7 +80,7 @@ Gemini instead of Claude, why full transcripts instead of excerpts, why a
    This creates a `.venv`, installs dependencies from `requirements.txt`,
    generates a one-time shared secret at `.groundhog-secret`, and registers +
    starts a `launchd` service that runs the companion at
-   `http://127.0.0.1:8787`. It's safe to re-run — it won't overwrite an
+   `http://127.0.0.1:8787`. It's safe to re-run and won't overwrite an
    existing secret. If `GEMINI_API_KEY` isn't already set in your shell or in
    a `.env` file at the repo root, it'll prompt you for one and save it to
    `.env` (gitignored) for future runs. Check it came up with:
@@ -101,8 +109,8 @@ Gemini instead of Claude, why full transcripts instead of excerpts, why a
    GEMINI_API_KEY=your-key-here
    ```
 
-   `install.sh` reads this and wires it into the launchd service directly —
-   no manual `launchctl` steps needed.
+   `install.sh` reads this and wires it into the launchd service directly,
+   so you don't need to run any manual `launchctl` steps.
 
 5. **(Optional) Seed the corpus from your existing watch history.** Export
    `watch-history.json` from [Google Takeout](https://takeout.google.com)
@@ -119,9 +127,9 @@ Gemini instead of Claude, why full transcripts instead of excerpts, why a
    python backfill.py path/to/watch-history.json
    ```
 
-   This is sequential and rate-limited on purpose (see
-   [`DECISIONS.md`](DECISIONS.md) — "Backfill") — a history of a few thousand
-   videos can take several hours. It's resumable: re-running after an
+   This is sequential and rate-limited on purpose (see the "Backfill" section
+   of [`DECISIONS.md`](DECISIONS.md)). A history of a few thousand videos can
+   take several hours. It's resumable: re-running after an
    interruption picks up where it left off instead of starting over. You can
    also add one video at a time with `python add_video.py <url-or-video-id>`.
 
@@ -134,38 +142,35 @@ alone typically takes 2-4 seconds, so the whole pipeline usually lands in
 well under 10 seconds). You can collapse it to a small pill or dismiss it
 entirely from its header buttons.
 
-Once you watch a video past 70% or 5 minutes, whichever comes first, it's
-automatically fetched, embedded, and added to the corpus — no manual step
-required after the initial backfill.
+Once you watch a video past 70% or 5 minutes, whichever comes first,
+Groundhog fetches it, embeds it, and adds it to the corpus automatically.
+You don't need to do anything else after the initial backfill.
 
 ## Configuration
 
 The extension's options page (`chrome://extensions` → Groundhog → Options)
 has two controls:
 
-- **Shared secret** — pasted from `.groundhog-secret`, required for the
+- **Shared secret**: pasted from `.groundhog-secret`, required for the
   extension to authenticate to the companion.
-- **K (videos compared per check)** — a 1–10 slider for how many of your
+- **K (videos compared per check)**: a 1–10 slider for how many of your
   closest-matching watched videos (by vector search) get sent to Gemini
   alongside the new video for comparison. Higher K is a more thorough (and
   more expensive/slower) check; lower is cheaper and faster. Defaults to 5.
 
 ## Project status
 
-This is a personal, experimental project — not production software. It works
+This is a personal, experimental project, not production software. It works
 end to end (transcript fetch → embed → vector search → Gemini verdict →
 overlay), but a few things are worth knowing:
 
 - **Transcript fetching is inherently a bit fragile.** It relies on `yt-dlp`'s
   `android_vr` client being exempt from YouTube's PO-token requirement, which
-  could change at any time — see [`DECISIONS.md`](DECISIONS.md) for the
+  could change at any time. See [`DECISIONS.md`](DECISIONS.md) for the
   fallback plan if that happens.
 - **No verdict caching.** Every video open re-runs the full pipeline, even on
   a rewatch.
 - **No spend cap.** There's no tracked ceiling on Gemini API usage yet.
-- A few in-code comments still reference internal GitHub issue numbers that
-  could use a pass for readability
-  ([#12](https://github.com/naveenk2k/groundhog/issues/12)).
 
 See the "Deferred, not forgotten" and "Not part of this tool" sections of
 [`PLAN.md`](PLAN.md) for the fuller list of what's intentionally out of scope
@@ -174,4 +179,4 @@ so on).
 
 ## License
 
-MIT — see [`LICENSE`](LICENSE).
+MIT. See [`LICENSE`](LICENSE).

@@ -1,0 +1,8 @@
+{
+  "name": "groundhog-extension",
+  "private": true,
+  "description": "Groundhog browser extension - see ../README.md for the full project.",
+  "scripts": {
+    "test": "node --test *.test.js"
+  }
+}

@@ -24,46 +24,19 @@ LABEL="com.groundhog.companion"
 PLIST_PATH="$HOME/Library/LaunchAgents/$LABEL.plist"
 LOG_DIR="$REPO_ROOT/.logs"
 
-# Picks which `python3` binary to build the venv with.
-#
-# Prefer Homebrew/python.org Python over Apple's system Python: Apple's
-# system SQLite lacks loadable-extension support that sqlite-vec needs (see
-# companion/corpus.py's module docstring for the full story on why that
-# matters). A bare `python3 -m venv` would pick up whichever python3 is
-# first on PATH, which is Apple's system one unless Homebrew/python.org
-# Python happens to come first.
-#
-# Preference order: Homebrew (Apple Silicon), Homebrew (Intel), python.org,
-# then whatever `python3` resolves to on PATH - unless that's specifically
-# Apple's system Python, in which case we refuse rather than silently
-# building the venv on it (see below).
-select_python() {
-  local candidate
-  for candidate in \
-    /opt/homebrew/bin/python3 \
-    /usr/local/bin/python3 \
-    /Library/Frameworks/Python.framework/Versions/Current/bin/python3
-  do
-    if [[ -x "$candidate" ]]; then
-      echo "$candidate"
-      return 0
-    fi
-  done
+# Python version this repo standardizes on. Provisioned via uv, which
+# manages its own isolated Python builds - it downloads this exact version
+# on first use regardless of what's on PATH, so there's no more silently
+# (or even correctly) depending on Homebrew/python.org/Apple's system Python
+# being installed at all. 3.12 over newer releases (3.13/3.14) since the ML
+# dependencies here (sentence-transformers) tend to lag on wheel support for
+# brand-new Python versions.
+PYTHON_VERSION="3.12"
 
-  # No Homebrew/python.org Python found. Fall back to whatever `python3`
-  # resolves to on PATH - but if that's specifically Apple's system Python
-  # (/usr/bin/python3), refuse: it's EOL, linked against an ancient LibreSSL,
-  # and its SQLite lacks loadable-extension support (see companion/corpus.py).
-  # Anything else on PATH (pyenv, asdf, etc.) is a reasonable python3 and is
-  # allowed through unchanged - this is not a version check.
-  local resolved
-  resolved="$(command -v python3 || true)"
-  if [[ -z "$resolved" || "$resolved" == "/usr/bin/python3" ]]; then
-    echo "No modern Python found - install one first: brew install python@3.12" >&2
-    exit 1
-  fi
-  echo "$resolved"
-}
+if ! command -v uv >/dev/null 2>&1; then
+  echo "uv is required to set up the venv - install it first: brew install uv (or see https://docs.astral.sh/uv/getting-started/installation/)" >&2
+  exit 1
+fi
 
 # Writes the launchd plist for the companion service to $1.
 #
@@ -162,11 +135,9 @@ resolve_gemini_api_key() {
 echo "==> Resolving Gemini API key"
 GEMINI_API_KEY_VALUE="$(resolve_gemini_api_key)"
 
-echo "==> Setting up Python venv at $VENV_DIR"
-PYTHON_BIN="$(select_python)"
-"$PYTHON_BIN" -m venv "$VENV_DIR"
-"$VENV_DIR/bin/pip" install --upgrade pip >/dev/null
-"$VENV_DIR/bin/pip" install -r "$REPO_ROOT/requirements.txt"
+echo "==> Setting up Python $PYTHON_VERSION venv at $VENV_DIR (via uv)"
+uv venv --python "$PYTHON_VERSION" "$VENV_DIR"
+uv pip install --python "$VENV_DIR/bin/python" -r "$REPO_ROOT/requirements.txt"
 
 if [[ -f "$SECRET_FILE" ]]; then
   echo "==> Secret already exists at $SECRET_FILE, leaving it untouched"

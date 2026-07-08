@@ -73,7 +73,9 @@ Gemini instead of Claude, why full transcripts instead of excerpts, why a
    generates a one-time shared secret at `.groundhog-secret`, and registers +
    starts a `launchd` service that runs the companion at
    `http://127.0.0.1:8787`. It's safe to re-run — it won't overwrite an
-   existing secret. Check it came up with:
+   existing secret. If `GEMINI_API_KEY` isn't already set in your shell or in
+   a `.env` file at the repo root, it'll prompt you for one and save it to
+   `.env` (gitignored) for future runs. Check it came up with:
 
    ```
    curl http://127.0.0.1:8787/health
@@ -90,25 +92,17 @@ Gemini instead of Claude, why full transcripts instead of excerpts, why a
    - Copy the contents of `.groundhog-secret` from the repo root into the
      "Shared secret" field and click Save
 
-4. **Add your Gemini API key.** The companion reads `GEMINI_API_KEY` from its
-   process environment (via the `google-genai` SDK). Create a `.env` file at
-   the repo root:
+4. **(Optional) Set or change your Gemini API key.** Get a free key from
+   [aistudio.google.com](https://aistudio.google.com). If step 1 already
+   prompted you for one, you're done. To set or change it without being
+   prompted, edit `.env` at the repo root and re-run `install.sh`:
 
    ```
    GEMINI_API_KEY=your-key-here
    ```
 
-   `.env` is gitignored. Note that the `launchd` service `install.sh`
-   registers doesn't read `.env` files itself, so the key still needs to
-   reach that process's actual environment — the simplest way is:
-
-   ```
-   launchctl setenv GEMINI_API_KEY your-key-here
-   launchctl kickstart -k gui/$(id -u)/com.groundhog.companion
-   ```
-
-   (Run the `setenv` line once; it persists across logins. Re-run the
-   `kickstart` line any time you change the key.)
+   `install.sh` reads this and wires it into the launchd service directly —
+   no manual `launchctl` steps needed.
 
 5. **(Optional) Seed the corpus from your existing watch history.** Export
    `watch-history.json` from [Google Takeout](https://takeout.google.com)

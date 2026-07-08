@@ -15,9 +15,9 @@
  *
  * `code` (phase "error" only) is the machine-readable category alongside
  * `message`'s human-readable prose - see overlay.js's classifyOverlayError,
- * which prefers `code` when present rather than pattern-matching `message`
- * (issue #28). `code` may be `undefined` for a result that predates this or
- * omits it; classifyOverlayError falls back to substring matching in that case.
+ * which prefers `code` when present rather than pattern-matching `message`.
+ * `code` may be `undefined` for a result that omits it; classifyOverlayError
+ * falls back to substring matching on `message` in that case.
  *
  * Lifecycle: content.js calls createOverlayState() fresh on every navigation
  * to a video it actually posts "opened" for (see content.js's

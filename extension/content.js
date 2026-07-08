@@ -27,6 +27,15 @@ let lastPostedVideoId = null;
 // video).
 const watchTracker = new WatchThresholdTracker();
 
+// Lets the overlay's "Open settings" button (setup-shaped errors only) open
+// the extension's options page without overlay.js needing chrome.* access
+// itself - content scripts may not have every chrome.runtime method
+// background.js does, so this routes through a message to the background
+// worker instead of calling chrome.runtime.openOptionsPage() directly here.
+GroundhogOverlay.onOpenSettingsClick = () => {
+  chrome.runtime.sendMessage({ type: "GROUNDHOG_OPEN_OPTIONS" });
+};
+
 function handleNavigation() {
   const videoId = extractVideoId(window.location.href);
 

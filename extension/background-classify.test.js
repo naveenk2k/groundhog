@@ -85,8 +85,8 @@ test("classifyVerdictError: any other error maps to the generic failure message"
 });
 
 // Confirms the output of these functions still classifies correctly through
-// overlay.js's classifyOverlayError, via the `code` field (issue #28) - the
-// same contract the two sides now share instead of relying on wording alone.
+// overlay.js's classifyOverlayError, via the `code` field - the same
+// contract the two sides now share instead of relying on wording alone.
 test("outputs classify correctly through overlay.js's classifyOverlayError, via code", () => {
   const { classifyOverlayError } = require("./overlay.js");
 

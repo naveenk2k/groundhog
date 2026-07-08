@@ -73,7 +73,7 @@ async function readModel() {
 // overlay.js's error body, so it needs to read as an instruction a real user
 // can act on. The "not_configured" code travels alongside it so overlay.js's
 // classifyOverlayError can branch on this specific case without
-// string-matching the message (see issue #28).
+// string-matching the message.
 const NOT_CONFIGURED_MESSAGE =
   "Groundhog isn't set up yet - open the extension's options page and paste your secret from .groundhog-secret.";
 
@@ -207,5 +207,11 @@ chrome.runtime.onMessage.addListener((message, sender) => {
   }
   if (message.type === "GROUNDHOG_VIDEO_WATCHED" && message.videoId) {
     postVideoWatched(message.videoId);
+  }
+  if (message.type === "GROUNDHOG_OPEN_OPTIONS") {
+    // The background worker always has full chrome.runtime access, unlike
+    // the content script the overlay's "Open settings" button lives in -
+    // see content.js's GroundhogOverlay.onOpenSettingsClick.
+    chrome.runtime.openOptionsPage();
   }
 });

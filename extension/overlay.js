@@ -23,7 +23,7 @@
 /**
  * Machine-readable `code` -> the same one-line reasons the substring
  * matching below produces, for every category background.js/verdict.py
- * currently attach one to (issue #28). Kept as a flat lookup rather than
+ * currently attach one to. Kept as a flat lookup rather than
  * folded into the substring-matching chain so it's obvious at a glance
  * which codes are recognized, and so a typo'd/unrecognized code cleanly
  * falls through to the substring-matching fallback instead of silently
@@ -51,9 +51,9 @@ const _CODE_TO_REASON = {
  * Prefers `code` (a machine-readable category attached alongside `raw`'s
  * human-readable prose - see `_CODE_TO_REASON` above) when it's present and
  * recognized. Falls back to pattern-matching recognizable substrings in
- * `raw` otherwise - either because `code` is missing (an older code path
- * that predates issue #28) or unrecognized (defensive: a future code this
- * version doesn't know about yet shouldn't produce a blank/broken badge).
+ * `raw` otherwise - either because `code` is missing (an older code path)
+ * or unrecognized (defensive: a future code this version doesn't know
+ * about yet shouldn't produce a blank/broken badge).
  * The known failure sources each produce error text of a wildly different
  * shape and verbosity, and the fallback only needs to degrade gracefully
  * for anything unrecognized - not enumerate every possible internal
@@ -161,8 +161,34 @@ function classifyOverlayError(raw, code) {
   return "Groundhog couldn't evaluate this video.";
 }
 
+/**
+ * True if this error is a setup problem - missing secret or misconfigured
+ * Gemini key - the only two categories "open the options page" actually
+ * fixes. Every other error (companion unreachable, timeout, no transcript,
+ * Gemini failure) has no business showing a settings link, since opening
+ * options wouldn't help there.
+ *
+ * Prefers `code` (see classifyOverlayError's _CODE_TO_REASON above) and
+ * only falls back to substring-matching `raw` when `code` is missing or
+ * unrecognized, same precedence classifyOverlayError itself uses.
+ */
+function isSetupError(raw, code) {
+  if (code === "not_configured" || code === "misconfigured") {
+    return true;
+  }
+  if (typeof raw !== "string") {
+    return false;
+  }
+  const msg = raw.toLowerCase();
+  return (
+    msg.includes("isn't set up") ||
+    msg.includes("no secret configured") ||
+    msg.includes("isn't configured correctly")
+  );
+}
+
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = { classifyOverlayError };
+  module.exports = { classifyOverlayError, isSetupError };
 }
 
 (function () {
@@ -375,6 +401,27 @@ if (typeof module !== "undefined" && module.exports) {
       line-height: 1.4;
     }
 
+    /* Only shown for setup-shaped errors - "Open settings" is a
+     * useless action for e.g. "companion unreachable", so this stays out of
+     * the DOM entirely for every other error rather than being hidden via
+     * CSS. Styled as a subtle outlined pill, same muted/monochrome language
+     * as the rest of the overlay - not a bright call-to-action button. */
+    .ghog-cant-evaluate-action {
+      all: unset;
+      cursor: pointer;
+      display: inline-block;
+      margin-top: 6px;
+      padding: 4px 10px;
+      font-size: 11px;
+      font-weight: 500;
+      color: var(--ghog-fg);
+      border: 1px solid var(--ghog-border);
+      border-radius: 999px;
+    }
+    .ghog-cant-evaluate-action:hover {
+      background: var(--ghog-track);
+    }
+
     /* Recommendation is the single most prominent line in the panel - the
      * actual "should I watch this" takeaway. Everything else (scores,
      * explanation) is visually secondary. */
@@ -580,6 +627,18 @@ if (typeof module !== "undefined" && module.exports) {
       reason.textContent = classifyOverlayError(state.data.message, state.data.code);
       text.appendChild(reason);
 
+      if (isSetupError(state.data.message, state.data.code)) {
+        const action = document.createElement("button");
+        action.className = "ghog-cant-evaluate-action";
+        action.textContent = "Open settings";
+        action.addEventListener("click", () => {
+          if (typeof GroundhogOverlay.onOpenSettingsClick === "function") {
+            GroundhogOverlay.onOpenSettingsClick();
+          }
+        });
+        text.appendChild(action);
+      }
+
       wrap.appendChild(text);
       body.appendChild(wrap);
       return;
@@ -693,6 +752,16 @@ if (typeof module !== "undefined" && module.exports) {
   }
 
   const GroundhogOverlay = {
+    /**
+     * Set by content.js to a function that opens the extension's options
+     * page. Called when the user clicks "Open settings" on a setup-shaped
+     * error. overlay.js stays DOM-only and never touches chrome.* itself
+     * (content scripts may not have access to every chrome.runtime method
+     * background.js does, e.g. openOptionsPage) - it just invokes whatever
+     * content.js registered here, defaulting to a no-op if nothing has
+     * (shouldn't normally happen - content.js sets this at load time).
+     */
+    onOpenSettingsClick: null,
     /** Called on every fresh video-opened request - see content.js. Always starts un-collapsed, un-dismissed, showing "checking...". */
     reset(videoId) {
       currentVideoId = videoId;

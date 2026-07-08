@@ -16,11 +16,11 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 
-const { classifyOverlayError } = require("./overlay.js");
+const { classifyOverlayError, isSetupError } = require("./overlay.js");
 
 test("a recognized code wins over substring matching, even with mismatched/garbage message text", () => {
   // Deliberately mismatched raw message per code, to prove code (not the
-  // substring fallback) is what's actually driving the result (issue #28).
+  // substring fallback) is what's actually driving the result.
   assert.equal(
     classifyOverlayError("this text matches nothing recognizable", "no_transcript"),
     "No transcript available for this video."
@@ -49,7 +49,7 @@ test("an unrecognized code falls back to substring matching on the message", () 
   );
 });
 
-test("a missing code falls back to substring matching, same as before issue #28", () => {
+test("a missing code falls back to substring matching, same as before code existed", () => {
   assert.equal(
     classifyOverlayError("companion request timed out after 60s"),
     "Groundhog took too long to respond."
@@ -210,4 +210,32 @@ test("every mapped reason is short (fits a one-line badge)", () => {
     const out = classifyOverlayError(raw);
     assert.ok(out.length > 0 && out.length < 60, `unexpectedly long reason for "${raw}": "${out}"`);
   }
+});
+
+test("isSetupError: true for not_configured/misconfigured codes, via code not message text", () => {
+  assert.equal(isSetupError("irrelevant text", "not_configured"), true);
+  assert.equal(isSetupError("irrelevant text", "misconfigured"), true);
+});
+
+test("isSetupError: false for every other known code", () => {
+  const nonSetupCodes = [
+    "no_transcript",
+    "timeout",
+    "companion_unreachable",
+    "companion_rate_limited",
+    "companion_error_status",
+    "gemini_busy",
+    "verdict_service_unreachable",
+    "unexpected_verdict_response",
+  ];
+  for (const code of nonSetupCodes) {
+    assert.equal(isSetupError("irrelevant text", code), false, `expected code "${code}" to not be a setup error`);
+  }
+});
+
+test("isSetupError: falls back to substring matching when code is missing", () => {
+  assert.equal(isSetupError("Groundhog isn't set up yet - open the extension's options page."), true);
+  assert.equal(isSetupError("Groundhog isn't configured correctly."), true);
+  assert.equal(isSetupError("companion request failed"), false);
+  assert.equal(isSetupError("companion request timed out after 60s"), false);
 });

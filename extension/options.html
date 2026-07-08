@@ -14,11 +14,44 @@
       /* Chrome's options_ui embeds this page inside chrome://extensions, so
          it inherits that page's font smoothing but not its layout - keep
          this self-contained and modest in width so it doesn't look out of
-         place embedded inline. */
+         place embedded inline.
+
+         Declares its actual supported color schemes so the browser stops
+         re-coloring native form control internals (particularly <select> -
+         see below) independently of the explicit colors this page sets -
+         without this, a browser in dark mode can apply its own dark
+         foreground color to a <select>'s text while this page's own
+         explicit white background stays put, producing unreadable
+         white-on-white text. */
+      :root {
+        color-scheme: light dark;
+
+        --ghog-bg: #ffffff;
+        --ghog-fg: #0f0f0f;
+        --ghog-fg-secondary: #606060;
+        --ghog-border: #ccc;
+        --ghog-field-bg: #ffffff;
+        --ghog-button-bg: #f2f2f2;
+        --ghog-button-bg-hover: #e5e5e5;
+        --ghog-status-fg: #1a7f37;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --ghog-bg: #212121;
+          --ghog-fg: #f1f1f1;
+          --ghog-fg-secondary: #aaaaaa;
+          --ghog-border: #3f3f3f;
+          --ghog-field-bg: #2c2c2c;
+          --ghog-button-bg: #333333;
+          --ghog-button-bg-hover: #3f3f3f;
+          --ghog-status-fg: #4caf6f;
+        }
+      }
       body {
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
         font-size: 13px;
-        color: #0f0f0f;
+        color: var(--ghog-fg);
+        background: var(--ghog-bg);
         max-width: 440px;
         margin: 12px;
       }
@@ -27,7 +60,7 @@
         margin: 0 0 4px;
       }
       p.hint {
-        color: #606060;
+        color: var(--ghog-fg-secondary);
         margin: 0 0 16px;
         line-height: 1.4;
       }
@@ -50,7 +83,9 @@
         padding: 6px 8px;
         font-family: monospace;
         font-size: 12px;
-        border: 1px solid #ccc;
+        color: var(--ghog-fg);
+        background: var(--ghog-field-bg);
+        border: 1px solid var(--ghog-border);
         border-radius: 6px;
       }
       select {
@@ -58,9 +93,10 @@
         box-sizing: border-box;
         padding: 6px 8px;
         font-size: 13px;
-        border: 1px solid #ccc;
+        color: var(--ghog-fg);
+        background: var(--ghog-field-bg);
+        border: 1px solid var(--ghog-border);
         border-radius: 6px;
-        background: #fff;
       }
       .k-row {
         display: flex;
@@ -79,18 +115,24 @@
       button {
         padding: 6px 14px;
         border-radius: 6px;
-        border: 1px solid #ccc;
-        background: #f2f2f2;
+        color: var(--ghog-fg);
+        border: 1px solid var(--ghog-border);
+        background: var(--ghog-button-bg);
         cursor: pointer;
         font-size: 13px;
       }
       button:hover {
-        background: #e5e5e5;
+        background: var(--ghog-button-bg-hover);
       }
+      /* No `display` set here - the browser's own `[hidden] { display: none }`
+         rule (specificity 0-1-0) needs to keep winning over this ID rule so
+         options.js's statusEl.hidden toggling actually has an effect. A
+         previous `display: inline-block` here beat that built-in rule
+         (specificity 1-0-0 > 0-1-0), which meant "Saved" showed on every
+         page load regardless of the `hidden` attribute/property. */
       #status {
-        display: inline-block;
         margin-left: 10px;
-        color: #1a7f37;
+        color: var(--ghog-status-fg);
       }
     </style>
   </head>

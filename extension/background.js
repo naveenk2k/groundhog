@@ -14,6 +14,12 @@
 // without duplicating the numbers.
 importScripts("options-k.js");
 
+// Pure response/error -> `{ error }` decision logic for requestVerdict(),
+// pulled out into its own DOM-free/chrome.*-free file so it can be
+// unit-tested directly in Node - see background-classify.js and
+// background-classify.test.js.
+importScripts("background-classify.js");
+
 const COMPANION_ORIGIN = "http://127.0.0.1:8787";
 
 // companion/app.py's POST /verdict. Fires once per video-opened event from
@@ -31,14 +37,9 @@ const VIDEO_WATCHED_PATH = "/videos/watched";
 // ("X-Groundhog-Secret") or every request gets a 401.
 const SECRET_HEADER = "X-Groundhog-Secret";
 
-// Client-side safety net: the companion's own Gemini call is bounded at
-// ~45s (companion/verdict.py's DEFAULT_TIMEOUT_SECONDS), but that only
-// helps if the companion process itself is alive to respond at all. If it
-// hangs (stuck request, wedged event loop) or never gets to answer, nothing
-// else here would ever stop "checking..." from spinning forever. 60s
-// comfortably clears the companion's own 45s budget plus network/queueing
-// overhead.
-const VERDICT_TIMEOUT_MS = 60000;
+// VERDICT_TIMEOUT_MS (the client-side fetch timeout budget) lives in
+// background-classify.js, imported above, so the timeout value and the
+// error string built from it (in classifyVerdictError) can't drift apart.
 
 async function readSecret() {
   const { groundhogSecret } = await chrome.storage.local.get("groundhogSecret");
@@ -93,11 +94,12 @@ async function requestVerdict(videoId) {
       body: JSON.stringify({ video_id: videoId, k }),
       signal: controller.signal,
     });
-    if (!response.ok) {
+    const responseError = classifyVerdictResponse(response);
+    if (responseError) {
       console.error(
         "Groundhog: companion responded " + response.status + " for video " + videoId
       );
-      return { error: "companion responded with status " + response.status };
+      return responseError;
     }
     // companion/app.py's /verdict always returns 200 with either a verdict
     // object or { error }, so whatever comes back here is already in the
@@ -107,19 +109,20 @@ async function requestVerdict(videoId) {
     // fetch() rejects with a DOMException named "AbortError" when the
     // AbortController above fires - distinguish that from "companion isn't
     // running at all" so overlay.js's classifyOverlayError can give it its
-    // own one-line reason.
+    // own one-line reason. See background-classify.js's classifyVerdictError
+    // for the actual decision.
     if (err && err.name === "AbortError") {
       console.error(
         "Groundhog: verdict request timed out after " + VERDICT_TIMEOUT_MS + "ms for video " + videoId
       );
-      return { error: "companion request timed out after " + (VERDICT_TIMEOUT_MS / 1000) + "s" };
+    } else {
+      // The full error (e.g. the browser's raw "Failed to fetch"/NetworkError
+      // text) is logged here for debugging, not included in the returned
+      // message - that field ends up rendered in the overlay, so it stays a
+      // short, calm string rather than leaking raw error text to the user.
+      console.error("Groundhog: verdict request failed for video " + videoId, err);
     }
-    // The full error (e.g. the browser's raw "Failed to fetch"/NetworkError
-    // text) is logged here for debugging, not included in the returned
-    // message - that field ends up rendered in the overlay, so it stays a
-    // short, calm string rather than leaking raw error text to the user.
-    console.error("Groundhog: verdict request failed for video " + videoId, err);
-    return { error: "companion request failed" };
+    return classifyVerdictError(err);
   } finally {
     clearTimeout(timeoutId);
   }

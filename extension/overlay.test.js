@@ -50,6 +50,34 @@ test("companion-unreachable errors map to a companion-specific reason", () => {
   );
 });
 
+test("companion responded with status 429 maps to a distinct rate-limited reason", () => {
+  assert.equal(
+    classifyOverlayError("companion responded with status 429"),
+    "Groundhog is being rate-limited - try again shortly."
+  );
+  // A generic 5xx should still get the plain "returned an error" reason, not
+  // the rate-limited one.
+  assert.equal(
+    classifyOverlayError("companion responded with status 503"),
+    "Groundhog companion returned an error."
+  );
+});
+
+test("Gemini's own transient overload/rate-limit signal maps to a distinct busy reason", () => {
+  assert.equal(
+    classifyOverlayError("Gemini is busy right now - try again in a bit."),
+    "Gemini is busy right now - try again in a bit."
+  );
+});
+
+test("unparseable Gemini response maps to a distinct reason from generic unreachability", () => {
+  const unparseableReason = classifyOverlayError(
+    "Groundhog got an unexpected response from the verdict service."
+  );
+  assert.equal(unparseableReason, "Groundhog got an unexpected response from the verdict service.");
+  assert.notEqual(unparseableReason, classifyOverlayError("Couldn't reach the verdict service."));
+});
+
 test("client-side timeout maps to a distinct reason from unreachable", () => {
   const timeoutReason = classifyOverlayError("companion request timed out after 60s");
   assert.equal(timeoutReason, "Groundhog took too long to respond.");

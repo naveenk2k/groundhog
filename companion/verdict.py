@@ -52,6 +52,13 @@ DEFAULT_MODEL = os.environ.get("GROUNDHOG_GEMINI_MODEL", "gemini-2.5-flash")
 # terminates - see module docstring.
 DEFAULT_TIMEOUT_SECONDS = float(os.environ.get("GROUNDHOG_GEMINI_TIMEOUT_SECONDS", "45"))
 
+# HTTP codes Gemini uses for its own transient overload/rate-limit signals
+# (confirmed live: a 503 "This model is currently experiencing high demand"
+# response) - distinct from genuine unreachability (DNS failure, connection
+# refused, etc.), so these get their own "try again shortly" message instead
+# of the generic "couldn't reach the verdict service" bucket.
+_TRANSIENT_GEMINI_CODES = {429, 503}
+
 # A select subset of an OpenAPI 3.0 schema object - what Gemini's
 # response_schema accepts. No `additionalProperties` (not part of that
 # subset); `required` + per-field `minimum`/`maximum` are enough to
@@ -290,9 +297,13 @@ def get_verdict(
         return {"error": "Groundhog took too long to respond."}
     except errors.ClientError as e:
         logger.error("Gemini API client error (%s): %s", e.code, e.message)
+        if e.code in _TRANSIENT_GEMINI_CODES:
+            return {"error": "Gemini is busy right now - try again in a bit."}
         return {"error": "Couldn't reach the verdict service."}
     except errors.ServerError as e:
         logger.error("Gemini API server error (%s): %s", e.code, e.message)
+        if e.code in _TRANSIENT_GEMINI_CODES:
+            return {"error": "Gemini is busy right now - try again in a bit."}
         return {"error": "Couldn't reach the verdict service."}
     except errors.APIError as e:
         logger.error("Gemini API error (%s): %s", e.code, e.message)
@@ -303,7 +314,7 @@ def get_verdict(
 
     if not response.parsed:
         logger.error("Gemini did not return a parseable verdict: %r", response)
-        return {"error": "Couldn't reach the verdict service."}
+        return {"error": "Groundhog got an unexpected response from the verdict service."}
 
     data = response.parsed
     return {

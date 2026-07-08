@@ -88,14 +88,40 @@ function classifyOverlayError(raw) {
   }
 
   if (msg.includes("companion responded with status")) {
+    // background.js's requestVerdict(): "companion responded with status N".
+    // 429 (rate-limited) is a transient, retry-worthy state - a meaningfully
+    // different story from a generic 5xx, which suggests something's
+    // actually broken.
+    const statusMatch = msg.match(/status (\d+)/);
+    const status = statusMatch ? parseInt(statusMatch[1], 10) : null;
+    if (status === 429) {
+      return "Groundhog is being rate-limited - try again shortly.";
+    }
     return "Groundhog companion returned an error.";
   }
 
+  // companion/verdict.py: Gemini's own transient overload/rate-limit signal
+  // (429/503 - confirmed live: "This model is currently experiencing high
+  // demand") - distinct from genuine unreachability, since Gemini responded
+  // just fine and told us it's busy. Checked before the generic "gemini"
+  // substring match below so it doesn't get swallowed by that bucket.
+  if (msg.includes("is busy right now")) {
+    return "Gemini is busy right now - try again in a bit.";
+  }
+
+  // companion/verdict.py: Gemini responded successfully but the response
+  // didn't parse against the schema - a companion/prompt/schema bug, not a
+  // connectivity problem, so it needs its own distinct message rather than
+  // being absorbed into the generic "couldn't reach" bucket below.
+  if (msg.includes("unexpected response from the verdict service")) {
+    return "Groundhog got an unexpected response from the verdict service.";
+  }
+
   // companion/verdict.py's already-clean Gemini-failure message (client/
-  // server/generic API errors, and the "did not return a parseable verdict"
-  // case all return this same text directly - see verdict.py) - matched
-  // here as a direct pass-through, plus the legacy substring in case an
-  // older/unexpected message still mentions Gemini by name.
+  // server/generic API errors all return this same text directly - see
+  // verdict.py) - matched here as a direct pass-through, plus the legacy
+  // substring in case an older/unexpected message still mentions Gemini by
+  // name.
   if (msg.includes("couldn't reach the verdict service") || msg.includes("gemini")) {
     return "Couldn't reach the verdict service.";
   }

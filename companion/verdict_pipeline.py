@@ -11,7 +11,6 @@ the result.
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
 from typing import Optional, TypedDict
 
 import apsw
@@ -87,7 +86,7 @@ def add_watched_video(conn: apsw.Connection, video_id: str) -> WatchedResult:
         video_id=video_id,
         title=fetched["title"] or video_id,
         creator=fetched["creator"] or "",
-        watched_at=datetime.now(timezone.utc).isoformat(),
+        watched_at=corpus.now_watched_at(),
         transcript_text=fetched["transcript"],
         embedding=embedding,
     )

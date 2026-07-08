@@ -266,5 +266,40 @@ class GetModelOfflineFallbackTest(unittest.TestCase):
         self.assertEqual(os.environ.get("HF_HUB_OFFLINE"), "1")
 
 
+class WatchedAtFormattingTest(unittest.TestCase):
+    """Both write paths (verdict_pipeline.py's live path via now_watched_at,
+    backfill.py's Takeout-import path via normalize_watched_at) must produce
+    the same canonical shape - see issue #36."""
+
+    def test_now_watched_at_matches_canonical_shape(self):
+        value = corpus.now_watched_at()
+        self.assertRegex(value, r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
+
+    def test_normalize_watched_at_converts_takeout_format(self):
+        # Takeout's raw export format: "Z"-suffixed, millisecond precision.
+        self.assertEqual(
+            corpus.normalize_watched_at("2026-07-07T10:30:29.831Z"),
+            "2026-07-07T10:30:29Z",
+        )
+
+    def test_normalize_watched_at_converts_offset_format(self):
+        # The old live-path format this replaces: "+00:00" offset, microsecond
+        # precision - confirms both historical shapes converge on one.
+        self.assertEqual(
+            corpus.normalize_watched_at("2026-07-08T15:58:00.123456+00:00"),
+            "2026-07-08T15:58:00Z",
+        )
+
+    def test_normalize_watched_at_converts_non_utc_offset(self):
+        self.assertEqual(
+            corpus.normalize_watched_at("2026-07-08T10:58:00-05:00"),
+            "2026-07-08T15:58:00Z",
+        )
+
+    def test_normalize_watched_at_falls_back_to_raw_on_unparseable_input(self):
+        self.assertEqual(corpus.normalize_watched_at(""), "")
+        self.assertEqual(corpus.normalize_watched_at("not a date"), "not a date")
+
+
 if __name__ == "__main__":
     unittest.main()

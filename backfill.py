@@ -48,7 +48,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 from companion.config import REPO_ROOT
-from companion.corpus import embed_text, get_connection, insert_video
+from companion.corpus import embed_text, get_connection, insert_video, normalize_watched_at
 from companion.transcript import fetch_transcript
 
 # One JSON object per line: {"video_id": ..., "status": "inserted"|"skipped"|"error", "reason": ...}
@@ -222,7 +222,7 @@ def main() -> None:
                 video_id=video_id,
                 title=title,
                 creator=resolved_creator,
-                watched_at=watched_at,
+                watched_at=normalize_watched_at(watched_at),
                 transcript_text=result["transcript"],
                 embedding=embedding,
             )

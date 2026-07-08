@@ -34,6 +34,7 @@ from __future__ import annotations
 import logging
 import os
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import Optional, Sequence
 
 import apsw
@@ -157,6 +158,44 @@ def _apply_migrations(conn: apsw.Connection) -> None:
     if "creator" not in existing_columns:
         for statement in _MIGRATIONS:
             conn.execute(statement)
+
+
+# --- watched_at formatting --------------------------------------------------
+
+# Canonical on-disk shape for `watched_at`: UTC, whole seconds, "Z" suffix
+# (e.g. "2026-07-08T15:58:00Z"). Both write paths - the live watch-threshold
+# path in verdict_pipeline.py and the Takeout-import path in backfill.py -
+# go through the helpers below instead of building the string inline, so
+# every row has the same shape rather than one using a "+00:00" offset with
+# microsecond precision (Python's default isoformat()) and the other a raw
+# "Z"-suffixed, millisecond-precision string straight from Takeout. Existing
+# rows written before this may still be in either of those older shapes;
+# companion/verdict.py's _format_watched_at keeps its defensive parsing for
+# exactly that reason.
+_WATCHED_AT_FORMAT = "%Y-%m-%dT%H:%M:%SZ"
+
+
+def now_watched_at() -> str:
+    """Current UTC time in the canonical watched_at storage format."""
+    return datetime.now(timezone.utc).strftime(_WATCHED_AT_FORMAT)
+
+
+def normalize_watched_at(raw: str) -> str:
+    """Reformat an arbitrary ISO 8601 watched_at string (e.g. Takeout's
+    millisecond-precision, "Z"-suffixed export format) into the canonical
+    storage format.
+
+    Falls back to returning `raw` unchanged if it doesn't parse - better to
+    store something than crash an hours-long backfill run over one entry's
+    formatting quirk.
+    """
+    try:
+        parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except ValueError:
+        return raw
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc).strftime(_WATCHED_AT_FORMAT)
 
 
 # --- Insert ----------------------------------------------------------------

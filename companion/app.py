@@ -10,6 +10,7 @@ companion/transcript.py and corpus storage in companion/corpus.py.
 from typing import Optional
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from companion import corpus
@@ -19,6 +20,21 @@ from companion.verdict_pipeline import add_watched_video, run_verdict_pipeline
 
 app = FastAPI(title="Groundhog companion")
 app.add_middleware(SecretAuthMiddleware)
+# Added after SecretAuthMiddleware so it wraps *outside* it (Starlette runs
+# middleware added later first) and can answer a CORS preflight OPTIONS
+# request before the secret check ever runs. Preflights are sent by the
+# browser itself and never carry custom headers, so without this,
+# SecretAuthMiddleware 401s every preflight and the browser refuses to send
+# the real request behind it - this is what actually happened in Safari.
+# Wildcard origin/headers are fine here: there's no cookie/credential auth
+# to leak, and the secret header still gates every real (non-preflight)
+# request exactly as before.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # Lazy singleton: opening the corpus connection (and, via embed_text, loading
 # the sentence-transformers model on first use) is expensive enough that we

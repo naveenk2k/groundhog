@@ -38,11 +38,11 @@ test("no-transcript errors map to a transcript-specific reason", () => {
 test("companion-unreachable errors map to a companion-specific reason", () => {
   assert.equal(
     classifyOverlayError("companion request failed: Failed to fetch"),
-    "Groundhog companion isn't running."
+    "Couldn't reach the Groundhog companion."
   );
   assert.equal(
     classifyOverlayError("companion request failed: NetworkError when attempting to fetch resource."),
-    "Groundhog companion isn't running."
+    "Couldn't reach the Groundhog companion."
   );
   assert.equal(
     classifyOverlayError("companion responded with status 500"),
@@ -106,7 +106,7 @@ test("already-clean upstream messages pass through with their intended reason, n
     classifyOverlayError("Groundhog isn't configured correctly."),
     "Groundhog isn't configured correctly."
   );
-  assert.equal(classifyOverlayError("companion request failed"), "Groundhog companion isn't running.");
+  assert.equal(classifyOverlayError("companion request failed"), "Couldn't reach the Groundhog companion.");
   assert.equal(
     classifyOverlayError("Couldn't reach the verdict service."),
     "Couldn't reach the verdict service."

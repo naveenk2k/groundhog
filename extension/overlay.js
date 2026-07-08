@@ -71,9 +71,12 @@ function classifyOverlayError(raw) {
     return "Groundhog isn't configured correctly.";
   }
 
-  // background.js's requestVerdict() catch block: the companion process
-  // itself isn't reachable (not running, wrong port) - browsers surface
-  // this as a generic "Failed to fetch"/NetworkError, not a specific code.
+  // background.js's requestVerdict() catch block: the fetch to the
+  // companion failed before any HTTP response came back - browsers surface
+  // this as a generic "Failed to fetch"/NetworkError with no detail on why
+  // (not running, wrong port, or blocked for some other reason, e.g. a CORS
+  // preflight rejection), so this can't claim a specific diagnosis like
+  // "isn't running" - that's more than the extension actually knows.
   if (
     msg.includes("companion request failed") ||
     msg.includes("failed to fetch") ||
@@ -81,7 +84,7 @@ function classifyOverlayError(raw) {
     msg.includes("connection refused") ||
     msg.includes("econnrefused")
   ) {
-    return "Groundhog companion isn't running.";
+    return "Couldn't reach the Groundhog companion.";
   }
 
   if (msg.includes("companion responded with status")) {

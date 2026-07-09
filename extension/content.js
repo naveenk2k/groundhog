@@ -209,8 +209,9 @@ function handleNavigation() {
  * background.js's /verdict response (or a synthesized error, e.g. companion
  * unreachable) comes back here as a runtime message rather than a direct
  * response to the sendMessage above, because the fetch to the companion
- * (2-4s+ for transcript retrieval alone, see PLAN.md) happens entirely in
- * the background worker - see background.js's requestVerdict.
+ * (2-4s+ for transcript retrieval alone, see DECISIONS.md "Transcript
+ * retrieval") happens entirely in the background worker - see
+ * background.js's requestVerdict.
  */
 chrome.runtime.onMessage.addListener((message) => {
   if (!message) {

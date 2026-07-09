@@ -1,24 +1,20 @@
 # Groundhog — domain glossary
 
 A living reference for the vocabulary this codebase actually uses. Kept
-separate from `PLAN.md` (the narrative design doc, written before/during
-build and not always updated as the code evolved) and `DECISIONS.md` (the
-ADR-style log of *why* specific choices were made). This file is the
-"what things are called and how they relate" reference; skills exploring
-this repo should use these terms rather than drifting to synonyms.
-
-Note: `PLAN.md` describes the scoring model as Claude/Haiku. The shipped
-code (`companion/verdict.py`) uses Gemini (`google-genai`, default model
-`gemini-2.5-flash`) instead — that's a stale spot in the plan doc, not a
-future change. Treat the code as authoritative.
+separate from `DECISIONS.md` (the ADR-style log of *why* specific choices
+were made). This file is the "what things are called and how they relate"
+reference; skills exploring this repo should use these terms rather than
+drifting to synonyms.
 
 ## The two halves
 
-- **extension** — the Chrome (Manifest V3) browser extension under
-  `extension/`. Runs in the browser: detects the video ID on a YouTube
-  watch page, tracks watch progress, renders the overlay, and holds the
-  options page. Cannot run Python, hold API keys long-term, or keep a
-  background process alive on its own — that's what the companion is for.
+- **extension** — the Manifest V3 browser extension under `extension/`,
+  loaded unpacked as-is in both Chrome and Safari (no separate Safari build
+  or Xcode conversion needed). Runs in the browser: detects the video ID on
+  a YouTube watch page, tracks watch progress, renders the overlay, and
+  holds the options page. Cannot run Python, hold API keys long-term, or
+  keep a background process alive on its own — that's what the companion is
+  for.
 - **companion** — the local FastAPI/uvicorn server under `companion/`,
   listening on `127.0.0.1:8787`. Fetches transcripts, embeds them, queries
   the corpus, calls Gemini for a verdict, and owns the corpus database and
@@ -32,10 +28,10 @@ future change. Treat the code as authoritative.
   companion via `yt-dlp` (`player_client=android_vr`), not scraped from the
   DOM.
 - **corpus** — the `sqlite-vec`-backed table (`corpus.db`) of previously
-  watched videos: `video_id`, `title`, `watched_at`, `transcript_text`, and
-  an `embedding` vector (384-dim, `all-MiniLM-L6-v2`). The raw transcript is
-  kept alongside the embedding so the corpus can be re-embedded if the
-  embedding model ever changes.
+  watched videos: `video_id`, `title`, `creator`, `published_at`,
+  `watched_at`, `transcript_text`, and an `embedding` vector (384-dim,
+  `all-MiniLM-L6-v2`). The raw transcript is kept alongside the embedding so
+  the corpus can be re-embedded if the embedding model ever changes.
 - **watch threshold** — a video counts as "watched" (added to the corpus)
   once 70% or 5 minutes has elapsed, whichever comes first, tracked via a
   `timeupdate` listener (`watch-tracker.js`). Below this, opening a video

@@ -18,8 +18,8 @@ sidecar that solves the real PO-token challenge) - not implemented here.
 
 Latency note: a successful fetch takes ~2-4 seconds (three sequential HTTPS
 round trips: webpage, player API, then the actual caption content from a
-third host). That's an accepted, load-bearing cost - see PLAN.md - not
-something to optimize away.
+third host). That's an accepted, load-bearing cost - see DECISIONS.md
+"Transcript retrieval" - not something to optimize away.
 """
 
 from __future__ import annotations

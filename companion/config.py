@@ -27,8 +27,9 @@ SECRET_HEADER = "X-Groundhog-Secret"
 # .gitignore - see companion/corpus.py.
 CORPUS_DB_FILE = Path(os.environ.get("GROUNDHOG_CORPUS_DB", str(REPO_ROOT / "corpus.db")))
 
-# Embedding model: small and fast enough to run on CPU in milliseconds,
-# per PLAN.md. 384-dimensional output - corpus.py's schema is sized to match.
+# Embedding model: small and fast enough to run on CPU in milliseconds - see
+# DECISIONS.md "Companion stack: Python, sentence-transformers, sqlite-vec".
+# 384-dimensional output - corpus.py's schema is sized to match.
 EMBEDDING_MODEL_NAME = "all-MiniLM-L6-v2"
 EMBEDDING_DIMENSIONS = 384
 

@@ -11,7 +11,8 @@
  */
 
 // A video only counts as "seen" once you've watched 70% of it or 5 minutes,
-// whichever comes first - see PLAN.md "Corpus policy". Logging on open
+// whichever comes first - see DECISIONS.md "Corpus policy: 70%/5-minute
+// watch threshold". Logging on open
 // (rather than on crossing this threshold) would count videos bailed on
 // seconds in, defeating the whole point of the comparison corpus.
 const WATCH_FRACTION_THRESHOLD = 0.7;

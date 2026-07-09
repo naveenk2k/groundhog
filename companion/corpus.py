@@ -337,8 +337,8 @@ def query_similar(
     """Return the top-`k` corpus rows nearest to `embedding`, closest first.
 
     `k` is a plain parameter (not hardcoded) - a later issue exposes it as a
-    UI slider (see PLAN.md / DECISIONS.md); this function just needs to
-    accept whatever value it's given.
+    UI slider (see DECISIONS.md); this function just needs to accept
+    whatever value it's given.
     """
     if k <= 0:
         return []

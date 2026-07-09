@@ -35,24 +35,23 @@ instead of guessing or failing silently:
 
 ## Architecture at a glance
 
-```
-┌───────────────────────┐        localhost:8787         ┌───────────────────────────┐
-│  Chrome extension      │  ── fetch() + secret header ─▶│  Python companion (bg)    │
-│  - content script      │    video ID, watch events     │  - FastAPI/uvicorn server │
-│  - on-page overlay UI  │ ◀──── JSON verdict ─────────  │  - yt-dlp (transcripts)   │
-│  - options page        │                                │  - sentence-transformers │
-└───────────────────────┘                                │    + sqlite-vec (corpus) │
-                                                            │  - Gemini (verdict call)  │
-                                                            └───────────────────────────┘
-```
-
 A browser extension can't write files, run Python, or keep a background
 process alive, so the actual work happens in a local companion process:
 
-- **Chrome extension**: a content script detects the video ID and tracks
-  watch progress on the page; a background service worker talks to the
-  companion over HTTP; an options page holds the user-facing settings (see
-  "Configuration" below).
+```mermaid
+flowchart LR
+    CS["content script<br/>+ on-page overlay<br/>(runs on the YouTube tab)"] --> BG["background<br/>service worker"]
+    OPT["options page<br/>(your settings)"] --> BG
+    BG -- "fetch() + secret header" --> API["Python companion<br/>localhost:8787"]
+    API --> YTD["yt-dlp<br/>(transcript)"]
+    API --> DB[("sqlite-vec<br/>(your watch history)")]
+    API --> GEM["Gemini<br/>(the verdict)"]
+```
+
+- **Browser extension** (Chrome or Safari): a content script detects the
+  video ID and tracks watch progress on the page; a background service
+  worker talks to the companion over HTTP; an options page holds your
+  settings (see "Configuration" below).
 - **Python companion**: a FastAPI server that fetches the transcript via
   `yt-dlp`, embeds it locally with `sentence-transformers`, searches a
   `sqlite-vec` corpus of your watch history for the closest topical matches,
@@ -63,10 +62,20 @@ process alive, so the actual work happens in a local companion process:
 The two talk over authenticated `http://127.0.0.1:8787`, gated by a shared
 secret so a random tab in your browser can't poke the companion.
 
+**What happens when you open a video:**
+
+1. The extension notices the new video and asks the companion whether it's
+   already in your watch history.
+2. If it is, you just get a quiet "already watched" note - no API calls
+   spent re-judging something you've already seen.
+3. If it isn't, the companion fetches the transcript, embeds it, and finds
+   the closest topical matches from everything you've already watched.
+4. It sends the new transcript plus those matches to Gemini, and the
+   overlay shows the verdict a few seconds later.
+
 For the full design rationale (why HTTP instead of native messaging, why
 Gemini instead of Claude, why full transcripts instead of excerpts, why a
-70%/5-minute watch threshold, etc.), see [`PLAN.md`](PLAN.md) and
-[`DECISIONS.md`](DECISIONS.md).
+70%/5-minute watch threshold, etc.) see [`DECISIONS.md`](DECISIONS.md).
 
 ## Prerequisites
 
@@ -75,7 +84,8 @@ Gemini instead of Claude, why full transcripts instead of excerpts, why a
 - **[`uv`](https://docs.astral.sh/uv/getting-started/installation/)** (e.g.
   `brew install uv`): `install.sh` uses it to provision Python 3.12 itself,
   so you don't need any particular Python already installed.
-- **Chrome**
+- **Chrome or Safari** - same `extension/` folder works unpacked in either,
+  no separate Safari build or Xcode step needed.
 - A free **Gemini API key** from [aistudio.google.com](https://aistudio.google.com)
 
 ## Setup
@@ -100,16 +110,22 @@ Gemini instead of Claude, why full transcripts instead of excerpts, why a
    curl http://127.0.0.1:8787/health
    ```
 
-2. **Load the extension into Chrome:**
-   - Go to `chrome://extensions`
-   - Turn on "Developer mode" (top right)
-   - Click "Load unpacked" and select the repo's `extension/` folder
+2. **Load the extension into your browser** (Chrome and Safari both work
+   identically from here on - everything past this step applies to either):
+   - **Chrome**: go to `chrome://extensions`, turn on "Developer mode" (top
+     right), click "Load unpacked," and select the repo's `extension/`
+     folder.
+   - **Safari**: load `extension/` as a temporary extension under Safari's
+     own Extensions settings. Safari's reload button there doesn't tear
+     down tabs opened before the reload - open a fresh tab if you've just
+     reloaded after a code change (tracked as issue #40).
 
-3. **Paste the shared secret into the options page:**
-   - Right-click the Groundhog extension icon → "Options" (or find it under
-     "Manage extension" → "Extension options")
-   - Copy the contents of `.groundhog-secret` from the repo root into the
-     "Shared secret" field and click Save
+3. **Paste the shared secret into the options page.** In Chrome:
+   right-click the Groundhog extension icon → "Options" (or find it under
+   "Manage extension" → "Extension options"); in Safari: find Groundhog
+   under Safari's own Extensions settings and open its options from there.
+   Either way, copy the contents of `.groundhog-secret` from the repo root
+   into the "Shared secret" field and click Save.
 
 4. **(Optional) Set or change your Gemini API key.** Get a free key from
    [aistudio.google.com](https://aistudio.google.com). If step 1 already
@@ -202,9 +218,11 @@ overlay), but a few things are worth knowing:
   fallback plan if that happens.
 - **No spend cap.** There's no tracked ceiling on Gemini API usage yet.
 
-See the "Deferred, not forgotten" and "Not part of this tool" sections of
-[`PLAN.md`](PLAN.md) for the fuller list of what's intentionally out of scope
-for now (Shorts support and similar).
+Shorts, embedded players on other sites, and any kind of auto-pause or
+auto-skip are intentionally out of scope, not just postponed. For what's
+planned or deferred, check the [open issues](../../issues) rather than a
+static list here, since that's where actual backlog decisions get made and
+it stays current on its own.
 
 ## License
 

@@ -156,8 +156,8 @@ async def videos_watched(payload: WatchedVideoRequest) -> dict:
     Thin adapter over companion/verdict_pipeline.py's add_watched_video. The
     content script's `WatchThresholdTracker` (extension/watch-tracker.js)
     fires exactly one request here per video, once playback crosses 70%
-    watched or 5 minutes, whichever comes first - see PLAN.md "Corpus
-    policy".
+    watched or 5 minutes, whichever comes first - see DECISIONS.md
+    "Corpus policy: 70%/5-minute watch threshold".
 
     A transcript fetch failure (no captions, deleted video, etc.) is a
     normal, expected outcome - not a server error. It's reported as

@@ -1,7 +1,88 @@
 # Groundhog — architecture decisions
 
 Running log of decisions made while designing this project, kept separate
-from `PLAN.md` (the narrative design doc) so it's easy to scan and append to.
+from `CONTEXT.md` (the domain glossary) so it's easy to scan and append to.
+
+## HTTP instead of native messaging
+
+**Decision:** the extension talks to the companion over plain HTTP
+(`127.0.0.1:8787`) rather than the browser's native messaging API.
+
+**Why:** you can `curl` the companion directly while debugging, and that
+matters more day to day than native messaging's theoretical cleanliness.
+Native messaging also requires installing a separate host manifest outside
+the extension itself - plain `fetch()` from `background.js` needs none of
+that.
+
+## Companion stack: Python, sentence-transformers, sqlite-vec
+
+**Decision:** the companion is Python (not Node), embeds transcripts locally
+with `sentence-transformers`, and stores the corpus in `sqlite-vec`.
+
+**Why:** `sentence-transformers` and `sqlite-vec` are better documented than
+their JS equivalents, which mattered while learning this stack during the
+build. Embeddings run in milliseconds on CPU and cost nothing per call, so
+there's no reason to send them to a hosted API. `sqlite-vec` keeps the whole
+corpus as one file you can back up and query with plain SQL - no separate
+vector database service to run or pay for.
+
+## launchd for companion auto-start
+
+**Decision:** the companion auto-starts via a `launchd` LaunchAgent
+(`RunAtLoad` + `KeepAlive`), set up once by `install.sh`.
+
+**Why:** it comes up at login and survives crashes without any day-to-day
+attention after the initial setup. This is macOS-specific by nature - see
+`README.md`'s "Prerequisites" for that limitation.
+
+## Vector search narrows, the model judges
+
+**Decision:** a two-stage pipeline - vector search over the corpus narrows
+your whole watch history down to the top-K closest matches by topic, then
+the verdict call judges substance from the real transcript text of those
+matches, not a summary or a similarity score.
+
+**Why:** embeddings only measure topical similarity, not quality. Two videos
+on the same subject look basically identical to an embedding whether one is
+lazy filler restating the obvious or the other is genuinely rigorous and
+goes somewhere new - that distinction only shows up once something actually
+reads the text. Vector search filters, the model judges. A standard
+retrieval-then-reason setup, nothing exotic about it.
+
+## Corpus policy: 70%/5-minute watch threshold
+
+**Decision:** a video only joins the corpus once you've watched 70% of it or
+5 minutes, whichever comes first (`watch-tracker.js`'s `timeupdate`
+listener).
+
+**Why:** logging a video the moment it's opened would pollute the corpus
+with things you clicked into and bailed on ten seconds later, which
+undermines the entire point of comparing new videos against what you've
+actually watched.
+
+## Verdict check starts on page load, not on play
+
+**Decision:** the check fires as soon as the video page loads, not when you
+press play.
+
+**Why:** you usually click straight in from a thumbnail rather than sitting
+on a loaded page first. Starting immediately overlaps the transcript fetch's
+2-4 second network latency with whatever time you'd spend on the page before
+watching anyway, instead of stacking that latency after playback starts.
+
+## On-page overlay, not a toolbar popup
+
+**Decision:** `content.js` injects a small, dismissible panel directly into
+the YouTube watch page - collapsible to a corner badge - instead of using
+the browser-action toolbar popup.
+
+**Why:** Manifest V3 discards a toolbar popup's DOM state the instant it
+closes, so there'd be nowhere for "checking..." to render until you happened
+to click the extension icon - the check would run silently with no visible
+progress, contradicting the "starts as soon as the page loads" decision
+above. The tradeoff is intrusiveness: this is UI drawn directly over
+YouTube's own page, so it has to hold up against YouTube's dark mode and
+mobile-width layouts rather than assuming one theme.
 
 ## Extension ↔ companion authentication
 
@@ -34,7 +115,7 @@ sidecar that solves the real PO-token challenge).
 
 **Known cost:** transcript fetch is 2-4s (three sequential HTTPS round trips
 to different hosts) regardless of CLI vs Python API. This pushed the
-"1-3 second" pipeline latency target in `PLAN.md` to "well under 10 seconds."
+original "1-3 second" pipeline latency target to "well under 10 seconds."
 
 ## Corpus schema
 

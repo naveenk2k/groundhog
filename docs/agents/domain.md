@@ -17,7 +17,6 @@ Single-context repo (this repo):
 /
 ├── CONTEXT.md
 ├── DECISIONS.md   ← plays the docs/adr/ role for this repo
-├── PLAN.md        ← narrative design doc, not always kept in sync with the code
 ├── extension/
 └── companion/
 ```
@@ -33,7 +32,3 @@ When your output names a domain concept (in an issue title, a refactor proposal,
 If your output contradicts an existing entry in `DECISIONS.md`, surface it explicitly rather than silently overriding:
 
 > _Contradicts the "Transcript retrieval" decision in DECISIONS.md — but worth reopening because…_
-
-## Known stale spot
-
-`PLAN.md` describes the scoring model as Claude/Haiku; the shipped code (`companion/verdict.py`) uses Gemini instead. `CONTEXT.md` documents the actual (Gemini) behavior — trust it over `PLAN.md` on this point.

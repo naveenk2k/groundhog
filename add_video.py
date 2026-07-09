@@ -63,6 +63,7 @@ def main() -> None:
         creator=creator,
         watched_at=now_watched_at(),
         transcript_text=result["transcript"],
+        published_at=result.get("published_at") or "",
     )
     print(f"Added '{title}' ({video_id}) to the corpus.")
 

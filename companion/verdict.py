@@ -136,7 +136,8 @@ You will be given the new video's full transcript, plus the full \
 transcripts of the videos from your watch history that are most similar \
 in topic (found via vector search - they are not random, they are the \
 closest matches to the new video). Each transcript is labeled with its \
-title, creator, and - when available - the date you watched it.
+title, creator, and - when available - the date it was published and the \
+date you watched it.
 
 Judge substance, not just topic overlap. Two videos on the same subject \
 can be totally different in value: one might be lazy filler restating the \
@@ -149,6 +150,15 @@ different signal from several different creators independently covering \
 the same ground - the former is more likely to be repetitive, the latter \
 suggests the topic is worth multiple treatments and the new video should \
 be judged on whether it adds its own angle.
+
+Watch for recurring, event-driven topics: sports, news, and politics \
+coverage often reuses the same framing and even the same complaints week \
+after week (a team's selection headaches, a party's polling slump) while \
+actually covering a brand-new game, decision, or news cycle each time. \
+Check the transcripts and publish dates for whether the matched videos \
+are about the same underlying event as the new one, or a different one \
+that just looks similar on the surface. Covering a new event in a \
+familiar format is novel; covering the same event again isn't.
 
 Be specific and personable, not generic. When the comparison really \
 centers on one particular watched video, name it directly by title \
@@ -191,19 +201,21 @@ class NewVideo:
     title: str
     creator: str
     transcript: str
+    published_at: str = ""
 
 
-def _format_watched_at(watched_at: str) -> Optional[str]:
-    """Turn a corpus row's ISO 8601 `watched_at` into a readable date for the
-    prompt (e.g. "July 7, 2026"), or None if it's missing/unparseable.
+def _format_date(raw: str) -> Optional[str]:
+    """Turn an ISO 8601 date/datetime string (a corpus row's `watched_at`,
+    or a date-only `published_at`) into a readable date for the prompt (e.g.
+    "July 7, 2026"), or None if it's missing/unparseable.
 
-    Older corpus rows (backfilled before this field was reliably populated)
-    or a bare timestamp format mismatch shouldn't break the prompt - the
-    system prompt is told to only mention a date when one is given, so
-    omitting it here just means Gemini talks about that video without a
-    date, not a crash.
+    Older corpus rows (backfilled before either field was reliably
+    populated) or a bare timestamp format mismatch shouldn't break the
+    prompt - the system prompt is told to only mention a date when one is
+    given, so omitting it here just means Gemini talks about that video
+    without a date, not a crash.
     """
-    if not watched_at:
+    if not raw:
         return None
     try:
         # Python's fromisoformat only accepts a "Z" suffix (rather than an
@@ -211,22 +223,31 @@ def _format_watched_at(watched_at: str) -> Optional[str]:
         # watch-history export timestamps are "Z"-suffixed (see backfill.py),
         # so without normalizing this, every backfilled video would silently
         # never get a date shown, even on newer Python where it'd parse fine.
-        normalized = watched_at.replace("Z", "+00:00")
+        normalized = raw.replace("Z", "+00:00")
         return datetime.fromisoformat(normalized).strftime("%B %-d, %Y")
     except ValueError:
         return None
 
 
 def _format_video_block(
-    label: str, title: str, creator: str, transcript: str, watched_at: Optional[str] = None
+    label: str,
+    title: str,
+    creator: str,
+    transcript: str,
+    watched_at: Optional[str] = None,
+    published_at: Optional[str] = None,
 ) -> str:
     lines = [
         f"--- {label} ---",
         f"Title: {title or '(untitled)'}",
         f"Creator: {creator or '(unknown)'}",
     ]
+    if published_at:
+        formatted = _format_date(published_at)
+        if formatted:
+            lines.append(f"Published on: {formatted}")
     if watched_at:
-        formatted = _format_watched_at(watched_at)
+        formatted = _format_date(watched_at)
         if formatted:
             lines.append(f"Watched on: {formatted}")
     lines.append(f"Transcript:\n{transcript}\n")
@@ -234,7 +255,15 @@ def _format_video_block(
 
 
 def _build_user_message(new_video: NewVideo, matches: list[CorpusMatch]) -> str:
-    parts = [_format_video_block("NEW VIDEO", new_video.title, new_video.creator, new_video.transcript)]
+    parts = [
+        _format_video_block(
+            "NEW VIDEO",
+            new_video.title,
+            new_video.creator,
+            new_video.transcript,
+            published_at=new_video.published_at,
+        )
+    ]
 
     if matches:
         parts.append(
@@ -249,6 +278,7 @@ def _build_user_message(new_video: NewVideo, matches: list[CorpusMatch]) -> str:
                     match.creator,
                     match.transcript_text,
                     watched_at=match.watched_at,
+                    published_at=match.published_at,
                 )
             )
     else:

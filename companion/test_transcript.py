@@ -11,7 +11,7 @@ Run directly: python -m companion.test_transcript
 
 import unittest
 
-from companion.transcript import _extract_creator, _pick_subtitle_url, _vtt_to_text
+from companion.transcript import _extract_creator, _extract_published_at, _pick_subtitle_url, _vtt_to_text
 
 
 class PickSubtitleUrlTest(unittest.TestCase):
@@ -108,6 +108,17 @@ class ExtractCreatorTest(unittest.TestCase):
 
     def test_returns_none_when_everything_absent(self):
         self.assertIsNone(_extract_creator({}))
+
+
+class ExtractPublishedAtTest(unittest.TestCase):
+    def test_reformats_upload_date_to_iso(self):
+        self.assertEqual(_extract_published_at({"upload_date": "20260704"}), "2026-07-04")
+
+    def test_returns_none_when_absent(self):
+        self.assertIsNone(_extract_published_at({}))
+
+    def test_returns_none_when_malformed(self):
+        self.assertIsNone(_extract_published_at({"upload_date": "not-a-date"}))
 
 
 class VttToTextTest(unittest.TestCase):

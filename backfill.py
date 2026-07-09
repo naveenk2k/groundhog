@@ -223,6 +223,7 @@ def main() -> None:
                 creator=resolved_creator,
                 watched_at=normalize_watched_at(watched_at),
                 transcript_text=result["transcript"],
+                published_at=result.get("published_at") or "",
             )
             inserted += 1
             append_checkpoint(video_id, "inserted")

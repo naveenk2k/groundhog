@@ -50,6 +50,7 @@ CREATE TABLE IF NOT EXISTS videos (
     video_id TEXT UNIQUE NOT NULL,
     title TEXT NOT NULL,
     creator TEXT NOT NULL DEFAULT '',
+    published_at TEXT NOT NULL DEFAULT '',
     watched_at TEXT NOT NULL,
     transcript_text TEXT NOT NULL
 );
@@ -59,12 +60,14 @@ CREATE VIRTUAL TABLE IF NOT EXISTS videos_vec USING vec0(
 );
 """
 
-# `creator` was added after the schema first shipped. `CREATE TABLE IF NOT
-# EXISTS` doesn't retrofit existing databases, so any corpus.db created
-# before this change needs an explicit ALTER TABLE - this keeps a corpus
-# someone already started building (e.g. via add_video.py) from breaking.
+# `creator` and `published_at` were both added after the schema first
+# shipped. `CREATE TABLE IF NOT EXISTS` doesn't retrofit existing databases,
+# so any corpus.db created before either change needs an explicit ALTER
+# TABLE - this keeps a corpus someone already started building (e.g. via
+# add_video.py) from breaking.
 _MIGRATIONS = [
-    "ALTER TABLE videos ADD COLUMN creator TEXT NOT NULL DEFAULT ''",
+    ("creator", "ALTER TABLE videos ADD COLUMN creator TEXT NOT NULL DEFAULT ''"),
+    ("published_at", "ALTER TABLE videos ADD COLUMN published_at TEXT NOT NULL DEFAULT ''"),
 ]
 
 
@@ -78,12 +81,16 @@ class CorpusMatch:
     sent, not excerpts). Creator lets the model distinguish "same channel
     revisiting its own topic" from "several different creators independently
     covering the same ground" - two very different signals for judging
-    novelty.
+    novelty. `published_at` (when the video itself went up, not when you
+    watched it) lets the model tell a genuinely new event from a rehash of
+    an old one for recurring topics like sports or news, where the same
+    discussion shape recurs around different underlying events.
     """
 
     video_id: str
     title: str
     creator: str
+    published_at: str
     watched_at: str
     transcript_text: str
     distance: float
@@ -155,8 +162,8 @@ def get_connection(db_path: Optional[str] = None) -> apsw.Connection:
 
 def _apply_migrations(conn: apsw.Connection) -> None:
     existing_columns = {row[1] for row in conn.execute("PRAGMA table_info(videos)")}
-    if "creator" not in existing_columns:
-        for statement in _MIGRATIONS:
+    for column, statement in _MIGRATIONS:
+        if column not in existing_columns:
             conn.execute(statement)
 
 
@@ -208,6 +215,7 @@ def insert_video(
     creator: str,
     watched_at: str,
     transcript_text: str,
+    published_at: str = "",
     embedding: Optional[Sequence[float]] = None,
 ) -> None:
     """Add a video to the corpus - the single embed+insert entry point every
@@ -243,19 +251,19 @@ def insert_video(
             cursor.execute(
                 """
                 UPDATE videos
-                SET title = ?, creator = ?, watched_at = ?, transcript_text = ?
+                SET title = ?, creator = ?, published_at = ?, watched_at = ?, transcript_text = ?
                 WHERE id = ?
                 """,
-                (title, creator, watched_at, transcript_text, row_id),
+                (title, creator, published_at, watched_at, transcript_text, row_id),
             )
             cursor.execute("DELETE FROM videos_vec WHERE rowid = ?", (row_id,))
         else:
             cursor.execute(
                 """
-                INSERT INTO videos (video_id, title, creator, watched_at, transcript_text)
-                VALUES (?, ?, ?, ?, ?)
+                INSERT INTO videos (video_id, title, creator, published_at, watched_at, transcript_text)
+                VALUES (?, ?, ?, ?, ?, ?)
                 """,
-                (video_id, title, creator, watched_at, transcript_text),
+                (video_id, title, creator, published_at, watched_at, transcript_text),
             )
             row_id = conn.last_insert_rowid()
 
@@ -305,7 +313,7 @@ def query_similar(
 
     rows = conn.execute(
         """
-        SELECT v.video_id, v.title, v.creator, v.watched_at, v.transcript_text, vv.distance
+        SELECT v.video_id, v.title, v.creator, v.published_at, v.watched_at, v.transcript_text, vv.distance
         FROM videos_vec AS vv
         JOIN videos AS v ON v.id = vv.rowid
         WHERE vv.embedding MATCH ? AND k = ?
@@ -319,9 +327,10 @@ def query_similar(
             video_id=video_id,
             title=title,
             creator=creator,
+            published_at=published_at,
             watched_at=watched_at,
             transcript_text=transcript_text,
             distance=distance,
         )
-        for video_id, title, creator, watched_at, transcript_text, distance in rows
+        for video_id, title, creator, published_at, watched_at, transcript_text, distance in rows
     ]

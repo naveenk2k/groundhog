@@ -45,6 +45,7 @@ class TranscriptResult(TypedDict):
     reason: str | None
     title: str | None
     creator: str | None
+    published_at: str | None
 
 
 class _SilentLogger:
@@ -116,6 +117,24 @@ def _extract_creator(info: dict) -> str | None:
     return info.get("channel_id")
 
 
+def _extract_published_at(info: dict) -> str | None:
+    """Pick the video's own publish date out of yt-dlp's info dict, as
+    `YYYY-MM-DD`.
+
+    This is when the *video* went up, not when you watched it - `watched_at`
+    (companion/corpus.py) already covers that. Distinguishing the two lets
+    the verdict prompt tell a genuinely new event (e.g. this week's match)
+    from a rehash of an old one, for recurring topics (sports, news) where
+    the same discussion shape recurs around different underlying events.
+    `upload_date` comes back as a bare `YYYYMMDD` string; reformatted here so
+    every caller downstream sees the same shape `watched_at` already uses.
+    """
+    raw = info.get("upload_date")
+    if not raw or len(raw) != 8:
+        return None
+    return f"{raw[0:4]}-{raw[4:6]}-{raw[6:8]}"
+
+
 def _vtt_to_text(vtt: str) -> str:
     """Collapse a WebVTT caption file down to plain spoken text, deduplicating
     consecutive repeated lines (auto-captions often repeat the same line
@@ -164,6 +183,7 @@ def fetch_transcript(video_id: str) -> TranscriptResult:
             "reason": f"video unavailable: {e}",
             "title": None,
             "creator": None,
+            "published_at": None,
         }
     except Exception as e:  # noqa: BLE001 - deliberately broad, see docstring
         return {
@@ -171,6 +191,7 @@ def fetch_transcript(video_id: str) -> TranscriptResult:
             "reason": f"unexpected error fetching video info: {e}",
             "title": None,
             "creator": None,
+            "published_at": None,
         }
 
     if info is None:
@@ -179,10 +200,12 @@ def fetch_transcript(video_id: str) -> TranscriptResult:
             "reason": "video unavailable or private",
             "title": None,
             "creator": None,
+            "published_at": None,
         }
 
     title = info.get("title")
     creator = _extract_creator(info)
+    published_at = _extract_published_at(info)
 
     subtitle_url = _pick_subtitle_url(info)
     if subtitle_url is None:
@@ -191,6 +214,7 @@ def fetch_transcript(video_id: str) -> TranscriptResult:
             "reason": "no English captions available",
             "title": title,
             "creator": creator,
+            "published_at": published_at,
         }
 
     try:
@@ -202,6 +226,7 @@ def fetch_transcript(video_id: str) -> TranscriptResult:
             "reason": f"failed to download caption content: {e}",
             "title": title,
             "creator": creator,
+            "published_at": published_at,
         }
 
     transcript = _vtt_to_text(vtt_text)
@@ -211,6 +236,13 @@ def fetch_transcript(video_id: str) -> TranscriptResult:
             "reason": "caption track was empty after parsing",
             "title": title,
             "creator": creator,
+            "published_at": published_at,
         }
 
-    return {"transcript": transcript, "reason": None, "title": title, "creator": creator}
+    return {
+        "transcript": transcript,
+        "reason": None,
+        "title": title,
+        "creator": creator,
+        "published_at": published_at,
+    }

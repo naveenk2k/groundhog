@@ -111,6 +111,7 @@ def run_verdict_pipeline(
         title=fetched["title"] or "",
         creator=fetched["creator"] or "",
         transcript=fetched["transcript"],
+        published_at=fetched.get("published_at") or "",
     )
 
     verdict_kwargs = {"model": model} if model else {}
@@ -141,6 +142,7 @@ def add_watched_video(conn: apsw.Connection, video_id: str) -> WatchedResult:
         creator=fetched["creator"] or "",
         watched_at=corpus.now_watched_at(),
         transcript_text=fetched["transcript"],
+        published_at=fetched.get("published_at") or "",
     )
 
     return {"added": True, "video_id": video_id, "title": fetched["title"], "reason": None}

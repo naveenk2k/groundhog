@@ -307,6 +307,17 @@ if (typeof module !== "undefined" && module.exports) {
     return { kind: "failure", message: "Couldn't add this video to your watch history." };
   }
 
+  /** Same idea as describeWatchedResult, for a "Remove from watch history" click (issue #42). */
+  function describeRemoveResult(result) {
+    if (result && result.removed) {
+      return { kind: "success", message: "Removed from your watch history." };
+    }
+    if (result && result.reason === "not_configured") {
+      return { kind: "failure", message: "Groundhog isn't set up yet - open the options page." };
+    }
+    return { kind: "failure", message: "Couldn't remove this video from your watch history." };
+  }
+
   /**
    * Read YouTube's own dark-mode flag. YouTube sets the boolean attribute
    * `dark` on <html> when dark theme is active (no attribute at all in
@@ -709,6 +720,11 @@ if (typeof module !== "undefined" && module.exports) {
     markWatchedBtn.textContent = "Mark as watched";
     markWatchedBtn.addEventListener("click", () => {
       if (state.alreadyWatched) {
+        if (typeof GroundhogOverlay.onRemoveClick === "function" && currentVideoId) {
+          GroundhogOverlay.onRemoveClick(currentVideoId);
+        }
+        markWatchedBtn.disabled = true;
+        markWatchedBtn.textContent = "Removing…";
         return;
       }
       if (typeof GroundhogOverlay.onMarkWatchedClick === "function" && currentVideoId) {
@@ -1016,9 +1032,15 @@ if (typeof module !== "undefined" && module.exports) {
       !state.alreadyWatched &&
       state.phase === "error" &&
       cannotMarkWatched(state.data && state.data.code);
-    els.markWatchedBtn.disabled = state.alreadyWatched || unwatchable;
+    // Once alreadyWatched, there's nothing left to "mark" - the button
+    // becomes the "Remove from watch history" action (issue #42) instead of
+    // a disabled, static "Already watched" label. Only ever shown for a
+    // video that's actually in the corpus (alreadyWatched only flips true
+    // on a real added/found result - see setAlreadyWatchedFlag/
+    // markAlreadyWatched), never speculatively.
+    els.markWatchedBtn.disabled = unwatchable;
     els.markWatchedBtn.textContent = state.alreadyWatched
-      ? "Already watched"
+      ? "Remove from watch history"
       : unwatchable
         ? "Can't add - no transcript"
         : "Mark as watched";
@@ -1151,6 +1173,39 @@ if (typeof module !== "undefined" && module.exports) {
         watchNoteTimer = null;
         render();
       }, WATCH_NOTE_TIMEOUT_MS);
+    },
+    /**
+     * Called when background.js's removeWatchedVideo result comes back for
+     * `videoId` (issue #42's "Remove from watch history" click). Ignored if
+     * the user has since navigated to a different video. Mirrors
+     * setWatchedResult's note/timer handling; the one difference is what a
+     * *success* does to `phase` - see clearAlreadyWatched's docs for why the
+     * terminal "watched" phase needs to move back to "checking" once the
+     * video it was describing is gone. Returns whether `phase` was
+     * "watched" before this call, so content.js (which owns the actual
+     * chrome.runtime.sendMessage calls, unlike this DOM-only module) knows
+     * whether it needs to fire a fresh verdict request to fill that back in.
+     */
+    setRemoveResult(videoId, result) {
+      if (videoId !== currentVideoId) {
+        return false;
+      }
+      const wasWatchedPhase = state.phase === "watched";
+      if (watchNoteTimer) {
+        clearTimeout(watchNoteTimer);
+        watchNoteTimer = null;
+      }
+      state = setWatchNote(state, describeRemoveResult(result));
+      if (result && result.removed) {
+        state = clearAlreadyWatched(state);
+      }
+      render();
+      watchNoteTimer = setTimeout(() => {
+        state = clearWatchNote(state);
+        watchNoteTimer = null;
+        render();
+      }, WATCH_NOTE_TIMEOUT_MS);
+      return wasWatchedPhase;
     },
     /**
      * Called from content.js's handleNavigation when a `yt-navigate-finish`

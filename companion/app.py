@@ -174,3 +174,17 @@ async def videos_watched(payload: WatchedVideoRequest) -> dict:
     if result["added"]:
         return {"added": True, "video_id": result["video_id"], "title": result["title"]}
     return {"added": False, "video_id": result["video_id"], "reason": result["reason"]}
+
+
+@app.delete("/videos/{video_id}")
+async def delete_video(video_id: str) -> dict:
+    """Remove a video from the corpus entirely (issue #42): a real DELETE
+    of its metadata row and embedding, not a soft-delete flag - see
+    DECISIONS.md ("Removing a video from watch history: hard delete, not
+    soft").
+
+    `{"removed": False}` covers both "never in the corpus" and "already
+    removed" - neither is an error, so this always returns 200.
+    """
+    removed = corpus.delete_video(_get_corpus_conn(), video_id)
+    return {"removed": removed}

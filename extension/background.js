@@ -246,6 +246,38 @@ async function lookupVideo(videoId) {
   }
 }
 
+/**
+ * Call the companion's DELETE /videos/{video_id} to remove a video from
+ * the corpus entirely (issue #42) - a real delete, not a soft-delete flag,
+ * see DECISIONS.md. Same URL prefix as lookupVideo above, just a different
+ * HTTP method.
+ */
+async function removeWatchedVideo(videoId) {
+  const secret = await readSecret();
+  if (!secret) {
+    return { removed: false, reason: "not_configured" };
+  }
+
+  try {
+    const response = await fetch(COMPANION_ORIGIN + VIDEO_LOOKUP_PATH_PREFIX + encodeURIComponent(videoId), {
+      method: "DELETE",
+      headers: {
+        [SECRET_HEADER]: secret,
+      },
+    });
+    if (!response.ok) {
+      return { removed: false, reason: "companion_error_status" };
+    }
+    // { removed: true } or { removed: false } - already the shape the
+    // overlay needs, just pass it through.
+    return await response.json();
+  } catch (err) {
+    // The companion may just not be running - fail quietly, same as
+    // postVideoWatched above.
+    return { removed: false, reason: "companion_unreachable" };
+  }
+}
+
 chrome.runtime.onMessage.addListener((message, sender) => {
   if (!message) {
     return;
@@ -337,6 +369,25 @@ chrome.runtime.onMessage.addListener((message, sender) => {
           // navigated away or closed before this came back.
           console.warn("Groundhog: could not deliver watched result to tab", err);
           return logBreadcrumb("watched_send_fail", { videoId: message.videoId, tabId, message: err && err.message });
+        });
+    });
+  }
+  if (message.type === "GROUNDHOG_VIDEO_REMOVE" && message.videoId) {
+    const tabId = sender && sender.tab ? sender.tab.id : null;
+    removeWatchedVideo(message.videoId).then((result) => {
+      if (tabId == null) {
+        return;
+      }
+      chrome.tabs
+        .sendMessage(tabId, {
+          type: "GROUNDHOG_REMOVE_RESULT",
+          videoId: message.videoId,
+          result,
+        })
+        .catch((err) => {
+          // Same as the other result-delivery sends above - the tab may
+          // have navigated away or closed before this came back.
+          console.warn("Groundhog: could not deliver remove result to tab", err);
         });
     });
   }

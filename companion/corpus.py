@@ -277,6 +277,38 @@ def insert_video(
         raise
 
 
+# --- Delete -----------------------------------------------------------------
+
+
+def delete_video(conn: apsw.Connection, video_id: str) -> bool:
+    """Permanently remove a video from the corpus: its metadata row and its
+    embedding, both gone. A real DELETE, not a soft-delete flag - see
+    DECISIONS.md ("Removing a video from watch history: hard delete, not
+    soft") for why.
+
+    Returns True if a row was actually removed, False if `video_id` wasn't
+    in the corpus - removing something already gone (or never added) is a
+    no-op, not an error.
+    """
+    cursor = conn.cursor()
+    cursor.execute("BEGIN")
+    try:
+        existing = cursor.execute(
+            "SELECT id FROM videos WHERE video_id = ?", (video_id,)
+        ).fetchone()
+        if existing is None:
+            cursor.execute("ROLLBACK")
+            return False
+        row_id = existing[0]
+        cursor.execute("DELETE FROM videos_vec WHERE rowid = ?", (row_id,))
+        cursor.execute("DELETE FROM videos WHERE id = ?", (row_id,))
+        cursor.execute("COMMIT")
+        return True
+    except Exception:
+        cursor.execute("ROLLBACK")
+        raise
+
+
 # --- Query -----------------------------------------------------------------
 
 

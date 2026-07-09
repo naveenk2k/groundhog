@@ -107,6 +107,25 @@ function setAlreadyWatchedFlag(state) {
 }
 
 /**
+ * Undo `alreadyWatched` once a "Remove from watch history" click (issue
+ * #42) actually removed the video from the corpus. If `phase` was the
+ * terminal "watched" state (the corpus pre-check found this video before
+ * any verdict was ever requested - see markAlreadyWatched), there's no
+ * verdict data left to show once it's removed, so this also moves `phase`
+ * back to "checking" and clears `data` - overlay.js's caller is
+ * responsible for actually firing a fresh verdict request to fill that back
+ * in, since this file has no chrome.* access to do that itself. Any other
+ * phase (checking/verdict/error) already reflects a real verdict that's
+ * still valid regardless of corpus membership, so only the flag changes.
+ */
+function clearAlreadyWatched(state) {
+  if (state.phase === "watched") {
+    return { ...state, phase: "checking", data: null, alreadyWatched: false };
+  }
+  return { ...state, alreadyWatched: false };
+}
+
+/**
  * Set (or replace) the transient corpus-add banner - see the state-shape
  * comment above. Does not touch phase/data/collapsed/dismissed: this is
  * strictly a secondary signal layered on top of whatever the verdict check
@@ -138,6 +157,7 @@ if (typeof module !== "undefined" && module.exports) {
     markContextInvalidated,
     markAlreadyWatched,
     setAlreadyWatchedFlag,
+    clearAlreadyWatched,
     setWatchNote,
     clearWatchNote,
     toggleCollapsed,

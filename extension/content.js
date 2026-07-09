@@ -140,6 +140,14 @@ GroundhogOverlay.onMarkWatchedClick = (videoId) => {
   safeSendMessage({ type: "GROUNDHOG_VIDEO_WATCHED", videoId });
 };
 
+// Lets the overlay's "Remove from watch history" button (issue #42, only
+// ever shown once state.alreadyWatched is true - see overlay.js's
+// renderFooter) ask the companion to actually delete the video's corpus
+// row, not just flag it unwatched - see DECISIONS.md.
+GroundhogOverlay.onRemoveClick = (videoId) => {
+  safeSendMessage({ type: "GROUNDHOG_VIDEO_REMOVE", videoId });
+};
+
 // Lets the overlay's "Retry" button (retry-worthy errors only - see
 // overlay.js's isRetryableError) re-fire a fresh verdict check for the same
 // video. Deliberately bypasses lastPostedVideoId below - that dedupe exists
@@ -231,6 +239,17 @@ chrome.runtime.onMessage.addListener((message) => {
   }
   if (message.type === "GROUNDHOG_WATCHED_RESULT") {
     GroundhogOverlay.setWatchedResult(message.videoId, message.result);
+  }
+  if (message.type === "GROUNDHOG_REMOVE_RESULT") {
+    const wasWatchedPhase = GroundhogOverlay.setRemoveResult(message.videoId, message.result);
+    // A removal that happened while the overlay was in the terminal
+    // "watched" phase (the corpus pre-check found it before any verdict was
+    // ever requested) leaves nothing to show - re-fire the same request
+    // handleNavigation would for a fresh video, now that this one really
+    // isn't in the corpus anymore.
+    if (message.result && message.result.removed && wasWatchedPhase && message.videoId === lastPostedVideoId) {
+      safeSendMessage({ type: "GROUNDHOG_VIDEO_OPENED", videoId: message.videoId });
+    }
   }
   if (message.type === "GROUNDHOG_LOOKUP_RESULT") {
     if (message.result && message.result.found) {

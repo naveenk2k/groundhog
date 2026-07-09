@@ -194,6 +194,26 @@ class CorpusTest(unittest.TestCase):
             "watched_at": "2026-01-07T10:00:00Z",
         })
 
+    def test_delete_video_removes_metadata_and_embedding(self):
+        self.assertTrue(corpus.delete_video(self.conn, "k8s_intro"))
+        self.assertIsNone(corpus.find_video(self.conn, "k8s_intro"))
+
+        count = self.conn.execute("SELECT COUNT(*) FROM videos").fetchone()[0]
+        self.assertEqual(count, len(TRANSCRIPTS) - 1)
+        vec_count = self.conn.execute("SELECT COUNT(*) FROM videos_vec").fetchone()[0]
+        self.assertEqual(vec_count, len(TRANSCRIPTS) - 1)
+
+    def test_delete_video_does_not_affect_other_rows(self):
+        corpus.delete_video(self.conn, "k8s_intro")
+        embedding = corpus.embed_text(TRANSCRIPTS["docker"][4])
+        [top] = corpus.query_similar(self.conn, embedding, k=1)
+        self.assertEqual(top.video_id, "docker_deep_dive")
+
+    def test_delete_video_returns_false_when_not_present(self):
+        self.assertFalse(corpus.delete_video(self.conn, "not_in_corpus"))
+        count = self.conn.execute("SELECT COUNT(*) FROM videos").fetchone()[0]
+        self.assertEqual(count, len(TRANSCRIPTS))  # untouched
+
 
 class CorpusMigrationTest(unittest.TestCase):
     """A corpus.db created before the `creator` column existed must keep
@@ -247,11 +267,12 @@ class CorpusMigrationTest(unittest.TestCase):
         conn = corpus.get_connection(self.db_path)
         columns = {row[1] for row in conn.execute("PRAGMA table_info(videos)")}
         self.assertIn("creator", columns)
+        self.assertIn("published_at", columns)
 
         row = conn.execute(
-            "SELECT video_id, title, creator FROM videos WHERE video_id = 'pre_migration'"
+            "SELECT video_id, title, creator, published_at FROM videos WHERE video_id = 'pre_migration'"
         ).fetchone()
-        self.assertEqual(row, ("pre_migration", "Old Video", ""))
+        self.assertEqual(row, ("pre_migration", "Old Video", "", ""))
         conn.close()
 
     def test_pre_migration_db_still_queryable(self):
@@ -260,6 +281,7 @@ class CorpusMigrationTest(unittest.TestCase):
         [top] = corpus.query_similar(conn, embedding, k=1)
         self.assertEqual(top.video_id, "pre_migration")
         self.assertEqual(top.creator, "")
+        self.assertEqual(top.published_at, "")
         conn.close()
 
 

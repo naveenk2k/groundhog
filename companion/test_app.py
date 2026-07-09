@@ -106,5 +106,38 @@ class GetVideoLookupTest(unittest.TestCase):
         self.assertEqual(response.status_code, 401)
 
 
+class DeleteVideoTest(unittest.TestCase):
+    def setUp(self):
+        self.client = TestClient(app)
+        self.conn = corpus.get_connection()
+        corpus.insert_video(
+            self.conn,
+            "to_be_removed",
+            "A Video I No Longer Want In My History",
+            "Some Creator",
+            "2026-01-05T10:00:00Z",
+            "irrelevant transcript text",
+        )
+
+    def test_removes_an_existing_video(self):
+        response = self.client.delete(
+            "/videos/to_be_removed", headers={SECRET_HEADER: "test-secret"}
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {"removed": True})
+        self.assertIsNone(corpus.find_video(self.conn, "to_be_removed"))
+
+    def test_reports_false_for_a_video_not_in_the_corpus(self):
+        response = self.client.delete(
+            "/videos/never_seen_this_one", headers={SECRET_HEADER: "test-secret"}
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {"removed": False})
+
+    def test_requires_the_secret_header_like_every_other_route(self):
+        response = self.client.delete("/videos/to_be_removed")
+        self.assertEqual(response.status_code, 401)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -16,6 +16,7 @@ const {
   markContextInvalidated,
   markAlreadyWatched,
   setAlreadyWatchedFlag,
+  clearAlreadyWatched,
   setWatchNote,
   clearWatchNote,
   toggleCollapsed,
@@ -120,6 +121,25 @@ test("setAlreadyWatchedFlag sets alreadyWatched without touching phase/data", ()
   assert.equal(next.alreadyWatched, true);
   assert.equal(next.phase, state.phase);
   assert.equal(next.data, state.data);
+});
+
+test("clearAlreadyWatched from phase watched moves back to checking and clears data", () => {
+  const info = { title: "A Video", watched_at: "2026-01-05T10:00:00Z" };
+  const state = markAlreadyWatched(createOverlayState(), info);
+  const next = clearAlreadyWatched(state);
+  assert.equal(next.phase, "checking");
+  assert.equal(next.data, null);
+  assert.equal(next.alreadyWatched, false);
+});
+
+test("clearAlreadyWatched from any other phase only touches alreadyWatched", () => {
+  const verdict = { novelty: 5 };
+  let state = applyVerdictResult(createOverlayState(), verdict);
+  state = setAlreadyWatchedFlag(state);
+  const next = clearAlreadyWatched(state);
+  assert.equal(next.alreadyWatched, false);
+  assert.equal(next.phase, "verdict");
+  assert.equal(next.data, verdict);
 });
 
 test("clearWatchNote resets watchNote to null without touching anything else", () => {

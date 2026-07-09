@@ -41,6 +41,11 @@ from companion.verdict_pipeline import add_watched_video, run_verdict_pipeline
 # separate, install.sh-scoped concern.
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
+# basicConfig's level applies to every unconfigured logger, not just ours.
+# Quiet httpx's and google-genai's own per-request INFO noise.
+for _noisy_logger in ("httpx", "google_genai"):
+    logging.getLogger(_noisy_logger).setLevel(logging.WARNING)
+
 app = FastAPI(title="Groundhog companion")
 app.add_middleware(SecretAuthMiddleware)
 # Added after SecretAuthMiddleware so it wraps *outside* it (Starlette runs

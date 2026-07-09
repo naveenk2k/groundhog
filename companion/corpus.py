@@ -129,7 +129,7 @@ def get_model():
 
 def embed_text(text: str) -> list[float]:
     """Embed a piece of text (e.g. a transcript) into a float vector."""
-    vector = get_model().encode(text, normalize_embeddings=True)
+    vector = get_model().encode(text, normalize_embeddings=True, show_progress_bar=False)
     return vector.tolist()
 
 

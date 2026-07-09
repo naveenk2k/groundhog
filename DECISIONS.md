@@ -208,10 +208,14 @@ otherwise trigger.
 
 ## Removing a video from watch history: hard delete, not soft
 
-**Decision (not yet implemented, tracked as issue #42):** when a "Remove
-from watch history" action is added to the already-watched overlay state,
-it will issue a real `DELETE FROM videos WHERE video_id = ?` — the row
-(including its embedding) is gone, not flagged unwatched-but-retained.
+**Decision (implemented, issue #42):** the "Remove from watch history"
+action issues a real `DELETE FROM videos WHERE video_id = ?` via
+`corpus.delete_video`, exposed as `DELETE /videos/{video_id}` in `app.py` -
+the row (including its embedding) is gone, not flagged
+unwatched-but-retained. The footer button that used to show a disabled,
+static "Already watched" label once a video was in the corpus now shows
+this as an active "Remove from watch history" action instead, and is only
+ever shown for a video that's genuinely in the corpus.
 
 **Why:** `corpus.insert_video` already upserts by `video_id`, so a deleted
 video re-added later (auto-threshold or manual) just gets a fresh row with
@@ -220,7 +224,12 @@ flag would add a permanent extra state every future corpus query has to
 filter for, for a tool whose whole job is judging novelty against exactly
 the rows that are actually in the corpus — a soft-deleted-but-present row
 would be an easy source of subtle bugs (e.g. a similarity search
-accidentally including it) for no real benefit over just removing it.
+accidentally including it) for no real benefit over just removing it. The
+old "Already watched" label was also reported as misleading right after a
+video was just auto-added or manually marked watched, since the wording
+implied something long-settled rather than something that had just
+happened - replacing it with an actionable "Remove" button fixed both at
+once, rather than needing a separate wording-only change plus this feature.
 
 ## Publish date alongside watched date in the verdict prompt
 

@@ -221,3 +221,29 @@ filter for, for a tool whose whole job is judging novelty against exactly
 the rows that are actually in the corpus — a soft-deleted-but-present row
 would be an easy source of subtle bugs (e.g. a similarity search
 accidentally including it) for no real benefit over just removing it.
+
+## Publish date alongside watched date in the verdict prompt
+
+**Decision:** the corpus now stores each video's own `published_at`
+(migrated in place, same pattern as `creator`), extracted from yt-dlp's
+`upload_date` in `transcript.py`. The verdict prompt gets this for both the
+new video and every matched video, alongside the existing `watched_at`. The
+system prompt was given an explicit instruction to check whether a matched
+video covers the same underlying event as the new one, or a different event
+that just looks similar, calling out sports/news/politics coverage by name
+as the case where this matters most.
+
+**Why:** the prompt previously only knew when *you* watched a video, not
+when either video actually happened or was published. For recurring,
+event-driven topics like sports commentary, the same framing and even the
+same complaints (a team's selection headaches, a party's polling slump)
+recur every week around a genuinely new game or news cycle, and without a
+publish date or explicit instruction, the model had no grounds to tell
+"this is the same debate again" from "this is this week's installment of an
+ongoing story." Reported live: a new video about India's selection
+strategy ahead of a fresh Test got judged as low-novelty against an older
+video on the same recurring topic, even though the underlying match had
+changed. Both the new signal (publish date) and the new instruction were
+added together since the date alone doesn't help if the model isn't told
+what to do with it, and the instruction alone has less to check against
+without the date.

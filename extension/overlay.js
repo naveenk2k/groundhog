@@ -227,8 +227,31 @@ function isSetupError(raw, code) {
   );
 }
 
+/**
+ * Error codes where a manual "Mark as watched" click can never succeed, so
+ * the footer shouldn't offer it as if it might work:
+ *
+ * - no_transcript: companion/verdict_pipeline.py's add_watched_video needs a
+ *   transcript to compute the embedding every corpus row requires - the same
+ *   fetch that already failed for the verdict check would fail again here,
+ *   every time. Without this, the button just silently reverts to
+ *   "Mark as watched" once the generic failure note fades, with nothing to
+ *   tell the user this isn't a transient glitch.
+ */
+const _UNWATCHABLE_CODES = new Set(["no_transcript"]);
+
+/**
+ * True if the footer's "Mark as watched" button should be disabled because
+ * this specific error can never be resolved by clicking it - see
+ * _UNWATCHABLE_CODES above. Only meaningful for phase "error"; callers pass
+ * `null`/`undefined` for every other phase and get `false` back.
+ */
+function cannotMarkWatched(code) {
+  return typeof code === "string" && _UNWATCHABLE_CODES.has(code);
+}
+
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = { classifyOverlayError, isSetupError, isRetryableError };
+  module.exports = { classifyOverlayError, isSetupError, isRetryableError, cannotMarkWatched };
 }
 
 (function () {
@@ -982,8 +1005,16 @@ if (typeof module !== "undefined" && module.exports) {
     // handler below - nothing changes `state` between the click and the
     // result arriving, so it stays on screen until the next render() call
     // overwrites it with whatever alreadyWatched says at that point.
-    els.markWatchedBtn.disabled = state.alreadyWatched;
-    els.markWatchedBtn.textContent = state.alreadyWatched ? "Already watched" : "Mark as watched";
+    const unwatchable =
+      !state.alreadyWatched &&
+      state.phase === "error" &&
+      cannotMarkWatched(state.data && state.data.code);
+    els.markWatchedBtn.disabled = state.alreadyWatched || unwatchable;
+    els.markWatchedBtn.textContent = state.alreadyWatched
+      ? "Already watched"
+      : unwatchable
+        ? "Can't add - no transcript"
+        : "Mark as watched";
 
     els.watchNote.classList.toggle("ghog-visible", Boolean(state.watchNote));
     if (state.watchNote) {

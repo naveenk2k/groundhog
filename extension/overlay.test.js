@@ -16,7 +16,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 
-const { classifyOverlayError, isSetupError, isRetryableError } = require("./overlay.js");
+const { classifyOverlayError, isSetupError, isRetryableError, cannotMarkWatched } = require("./overlay.js");
 
 test("a recognized code wins over substring matching, even with mismatched/garbage message text", () => {
   // Deliberately mismatched raw message per code, to prove code (not the
@@ -265,4 +265,28 @@ test("isRetryableError: falls back to !isSetupError when code is missing/unrecog
   assert.equal(isRetryableError("Groundhog isn't set up yet - open the extension's options page."), false);
   assert.equal(isRetryableError("companion request failed"), true);
   assert.equal(isRetryableError("irrelevant", "some_future_code_this_version_does_not_know"), true);
+});
+
+test("cannotMarkWatched: true only for no_transcript - add_watched_video needs the same transcript fetch that already failed", () => {
+  assert.equal(cannotMarkWatched("no_transcript"), true);
+});
+
+test("cannotMarkWatched: false for every other known code, missing code, or unrecognized code", () => {
+  const stillWatchable = [
+    "timeout",
+    "not_configured",
+    "misconfigured",
+    "companion_unreachable",
+    "companion_rate_limited",
+    "companion_error_status",
+    "gemini_busy",
+    "verdict_service_unreachable",
+    "unexpected_verdict_response",
+    "some_future_code_this_version_does_not_know",
+  ];
+  for (const code of stillWatchable) {
+    assert.equal(cannotMarkWatched(code), false, `expected code "${code}" to still allow Mark as watched`);
+  }
+  assert.equal(cannotMarkWatched(undefined), false);
+  assert.equal(cannotMarkWatched(null), false);
 });

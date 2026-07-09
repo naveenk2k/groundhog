@@ -20,6 +20,15 @@
 // fire a duplicate request.
 let lastPostedVideoId = null;
 
+// Set to the current video's ID once its /verdict came back no_transcript -
+// see the GROUNDHOG_VERDICT_RESULT handler below and handleTimeUpdate, which
+// skips firing the automatic watch-threshold GROUNDHOG_VIDEO_WATCHED message
+// for this video. add_watched_video (companion/verdict_pipeline.py) needs
+// the same transcript fetch that already failed for the verdict check, so
+// that call would fail identically every time - no point spending it. Reset
+// to null whenever a genuinely new video starts (see handleNavigation).
+let noTranscriptVideoId = null;
+
 // One random ID per content-script injection - purely diagnostic (see the
 // breadcrumbs in the onMessage listener below). Safari has a documented bug
 // class where a content script from before a page reload can keep running
@@ -175,6 +184,7 @@ function handleNavigation() {
     return;
   }
   lastPostedVideoId = videoId;
+  noTranscriptVideoId = null;
 
   // Show "checking..." immediately, in lockstep with the lookup firing -
   // the overlay must not wait for a response to appear at all.
@@ -214,6 +224,9 @@ chrome.runtime.onMessage.addListener((message) => {
     });
   }
   if (message.type === "GROUNDHOG_VERDICT_RESULT") {
+    if (message.result && message.result.code === "no_transcript") {
+      noTranscriptVideoId = message.videoId;
+    }
     GroundhogOverlay.setResult(message.videoId, message.result);
   }
   if (message.type === "GROUNDHOG_WATCHED_RESULT") {
@@ -254,7 +267,7 @@ function handleTimeUpdate(event) {
     video.currentTime,
     video.duration
   );
-  if (crossedThreshold) {
+  if (crossedThreshold && videoId !== noTranscriptVideoId) {
     safeSendMessage({ type: "GROUNDHOG_VIDEO_WATCHED", videoId });
   }
 }

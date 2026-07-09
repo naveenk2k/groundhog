@@ -992,8 +992,15 @@ if (typeof module !== "undefined" && module.exports) {
     // Nothing in the footer (mark-as-watched, corpus-add note) can do
     // anything useful once the extension context is invalidated - every
     // chrome.runtime.sendMessage it would trigger is already known to fail.
-    els.footer.style.display = state.phase === "stale" ? "none" : "";
-    if (state.phase === "stale") {
+    // Same for a setup error (not_configured/misconfigured): postVideoWatched
+    // needs the same secret that's already known to be missing/wrong, so a
+    // click would fail exactly like the verdict check already did - and the
+    // body's "Open settings" button (see isSetupError above) is already the
+    // one useful action for this state, so the footer would just be a second,
+    // guaranteed-broken button competing with it.
+    const setupError = state.phase === "error" && isSetupError(state.data && state.data.message, state.data && state.data.code);
+    els.footer.style.display = state.phase === "stale" || setupError ? "none" : "";
+    if (state.phase === "stale" || setupError) {
       return;
     }
     // Button state is derived from state.alreadyWatched on every render,

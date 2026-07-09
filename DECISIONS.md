@@ -146,3 +146,78 @@ personal IP, for a workflow that only ever needs to run once. Some fraction
 of older videos will have no transcript at all (deleted, privated, no
 captions ever generated) — expected loss, not a bug, so the run must
 tolerate and log it rather than fail outright.
+
+## Manual "Mark as watched" as a fallback, not a universal action
+
+**Decision:** the overlay always offers a manual "Mark as watched" button
+(`b4c9197`) alongside the automatic 70%-watched threshold, so a video can
+still be added to the corpus after a failed verdict check. But the button is
+hidden or disabled — not just left clickable and silently failing — in the
+two states where a click can never actually succeed: a setup error
+(`not_configured`/`misconfigured`, issue #44 — `postVideoWatched` needs the
+same missing/wrong secret that already broke the verdict check) and
+`no_transcript` (issue #43 — `add_watched_video` needs the same transcript
+fetch that already failed, since every corpus row requires an embedding).
+
+**Why:** the button originally showed unconditionally in every non-terminal
+phase. In both excluded states, clicking it produced a generic failure note
+that faded a few seconds later, reverting to a plain "Mark as watched" as if
+nothing had happened — indistinguishable from the button being broken. The
+fix is state-driven (mirrors the existing `isRetryableError`/`isSetupError`
+code-based pattern) rather than hiding the button for every error, since
+most error codes (timeout, companion/Gemini unreachable, rate-limited) are
+about the *verdict* call, not the corpus-add path, and a manual add still
+has a real chance of succeeding there.
+
+## Corpus pre-check before requesting a verdict
+
+**Decision:** `content.js` fires a lightweight `GET /videos/{video_id}`
+lookup (`corpus.find_video`, issue #41) on every fresh navigation, before
+ever posting `GROUNDHOG_VIDEO_OPENED`. If the video's already in the corpus,
+the overlay jumps straight to an "Already in your watch history" state — no
+"Checking...", no Gemini call. The lookup fails open (`{found: false}`) on
+any problem (no secret yet, companion unreachable, non-2xx), falling
+straight through to the normal verdict flow rather than surfacing its own
+error state.
+
+**Why:** re-watching (or re-opening) an already-judged video was spending a
+full embedding+similarity-search+Gemini call for a verdict that would just
+be discarded — a real per-video cost multiplied by however often a video
+gets revisited. The lookup itself costs nothing an ordinary corpus row
+doesn't already provide (no embedding/similarity work, no Gemini). Fail-open
+was chosen over fail-closed because this is purely an optimization: a lookup
+outage should never block or error the actual verdict check that already
+worked before this existed.
+
+## Transcript fetch caching
+
+**Decision:** `companion/verdict_pipeline.py` caches the last-fetched
+transcript per video ID for 10 minutes (`_cached_fetch_transcript`, issue
+#33), capped at 50 entries with oldest-first eviction. Both the verdict path
+and the manual "Mark as watched" `add_watched_video` path share this cache.
+
+**Why:** a verdict check and a subsequent manual "Mark as watched" click for
+the same video (or a retry after a transient failure) were each paying the
+full 2-4s transcript fetch independently, even though nothing about the
+video changed between them. A short TTL avoids serving a stale transcript
+indefinitely while still collapsing the common back-to-back case. The
+failure result is cached too (not just successes) — a `no_transcript` video
+won't change on a second attempt within the window, so caching that outcome
+also saves the repeat fetch a manual retry or "Mark as watched" click would
+otherwise trigger.
+
+## Removing a video from watch history: hard delete, not soft
+
+**Decision (not yet implemented, tracked as issue #42):** when a "Remove
+from watch history" action is added to the already-watched overlay state,
+it will issue a real `DELETE FROM videos WHERE video_id = ?` — the row
+(including its embedding) is gone, not flagged unwatched-but-retained.
+
+**Why:** `corpus.insert_video` already upserts by `video_id`, so a deleted
+video re-added later (auto-threshold or manual) just gets a fresh row with
+no special-casing needed for "was this soft-deleted before." A soft-delete
+flag would add a permanent extra state every future corpus query has to
+filter for, for a tool whose whole job is judging novelty against exactly
+the rows that are actually in the corpus — a soft-deleted-but-present row
+would be an easy source of subtle bugs (e.g. a similarity search
+accidentally including it) for no real benefit over just removing it.

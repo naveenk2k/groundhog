@@ -18,7 +18,7 @@ const DEFAULT_MODEL = "gemini-2.5-flash";
 // The selectable model tiers, in the order they should appear in the
 // options page's <select>. Real Gemini model ID strings, matching
 // companion/verdict.py's existing naming convention exactly.
-const MODEL_TIERS = ["gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-2.5-pro"];
+const MODEL_TIERS = ["gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-2.5-pro", "gemini-3.1-flash-lite"];
 
 /**
  * Resolve an arbitrary value (e.g. straight out of a <select>'s .value, or

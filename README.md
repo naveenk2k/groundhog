@@ -1,5 +1,10 @@
 # Groundhog
 
+> [!NOTE]
+> Full disclosure: I'm glued to YouTube. It's by far my most-used website (can you blame me? there are SO many talented creators and interesting stories). But I'm trying to be more intentional about the content I consume. I don't want to burn an hour on a video that's just a rehash of something I've already watched. So I built Groundhog to be my personal video-vetting assistant.
+>
+> (Yes, the name is a Groundhog Day reference. Bill Murray gets stuck reliving the same day forever, which is basically what my watch history looked like before I built this.)
+
 Groundhog checks a YouTube video against everything you've already watched
 before you spend time on it. That way you can tell whether it's actually
 saying something new, or just another take on something you've already

@@ -398,3 +398,31 @@ chrome.runtime.onMessage.addListener((message, sender) => {
     chrome.runtime.openOptionsPage();
   }
 });
+
+/**
+ * Clicking the toolbar icon (issue #46 - previously a dead click, since no
+ * default_popup was ever declared) asks the active tab's content script to
+ * bring back a dismissed overlay for the current video. Falls through to
+ * opening the options page whenever there's nothing to bring back: the
+ * content script reports `{ handled: false }` (overlay already
+ * visible/collapsed, not dismissed), or the sendMessage itself fails
+ * (no content script in this tab at all - not a YouTube watch page, or the
+ * extension context is stale). Either way, a plain left-click on the icon
+ * should always do *something* useful, never nothing.
+ */
+chrome.action.onClicked.addListener((tab) => {
+  if (tab.id == null) {
+    chrome.runtime.openOptionsPage();
+    return;
+  }
+  chrome.tabs
+    .sendMessage(tab.id, { type: "GROUNDHOG_ICON_CLICKED" })
+    .then((response) => {
+      if (!response || !response.handled) {
+        chrome.runtime.openOptionsPage();
+      }
+    })
+    .catch(() => {
+      chrome.runtime.openOptionsPage();
+    });
+});

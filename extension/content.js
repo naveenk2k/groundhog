@@ -213,8 +213,16 @@ function handleNavigation() {
  * retrieval") happens entirely in the background worker - see
  * background.js's requestVerdict.
  */
-chrome.runtime.onMessage.addListener((message) => {
+chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (!message) {
+    return;
+  }
+  if (message.type === "GROUNDHOG_ICON_CLICKED") {
+    // Synchronous - GroundhogOverlay.showIfDismissed() only ever flips
+    // in-memory state, no chrome.* call to await - so sendResponse fires
+    // within this same tick and there's no need to return true to keep the
+    // message channel open.
+    sendResponse({ handled: GroundhogOverlay.showIfDismissed() });
     return;
   }
   if (message.type === "GROUNDHOG_VERDICT_RESULT" || message.type === "GROUNDHOG_WATCHED_RESULT") {

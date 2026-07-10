@@ -120,12 +120,14 @@ Gemini instead of Claude, why full transcripts instead of excerpts, why a
      down tabs opened before the reload - open a fresh tab if you've just
      reloaded after a code change (tracked as issue #40).
 
-3. **Paste the shared secret into the options page.** In Chrome:
-   right-click the Groundhog extension icon → "Options" (or find it under
-   "Manage extension" → "Extension options"); in Safari: find Groundhog
-   under Safari's own Extensions settings and open its options from there.
-   Either way, copy the contents of `.groundhog-secret` from the repo root
-   into the "Shared secret" field and click Save.
+3. **Paste the shared secret into the options page.** Click the Groundhog
+   toolbar icon to open it directly (it falls back to opening options
+   whenever there's no dismissed overlay to bring back instead - see
+   "Configuration" below). If you don't see the icon, right-click it and
+   choose "Options" in Chrome (or find it under "Manage extension" →
+   "Extension options"), or find Groundhog under Safari's own Extensions
+   settings. Either way, copy the contents of `.groundhog-secret` from the
+   repo root into the "Shared secret" field and click Save.
 
 4. **(Optional) Set or change your Gemini API key.** Get a free key from
    [aistudio.google.com](https://aistudio.google.com). If step 1 already
@@ -167,7 +169,8 @@ corner showing "Checking your watch history…" immediately, then fills in
 with scores and a recommendation within a few seconds (transcript retrieval
 alone typically takes 2-4 seconds, so the whole pipeline usually lands in
 well under 10 seconds). You can collapse it to a small pill or dismiss it
-entirely from its header buttons.
+entirely from its header buttons - click the Groundhog toolbar icon to bring
+back a dismissed overlay for the current video without reloading the page.
 
 Once you watch a video past 70% or 5 minutes, whichever comes first,
 Groundhog fetches it, embeds it, and adds it to the corpus automatically.
@@ -175,8 +178,8 @@ You don't need to do anything else after the initial backfill.
 
 ## Configuration
 
-The extension's options page (`chrome://extensions` → Groundhog → Options)
-has:
+The extension's options page - reachable by clicking the Groundhog toolbar
+icon (or `chrome://extensions` → Groundhog → Options) - has:
 
 - **Shared secret**: pasted from `.groundhog-secret`, required for the
   extension to authenticate to the companion.

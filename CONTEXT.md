@@ -48,10 +48,17 @@ drifting to synonyms.
 - **overlay** — the on-page panel the content script injects into the
   YouTube watch page (`overlay.js` + `overlay-state.js`), rendered in a
   shadow DOM. Shows "checking…", then a verdict or a neutral "can't
-  evaluate" badge. Collapsible to a corner pill; never auto-expands once
-  collapsed. Distinct from a toolbar popup (MV3 discards popup DOM state on
+  evaluate" badge. Collapsible to a corner pill (still recoverable by
+  clicking the pill); dismissible entirely (the pill goes away too, only
+  recoverable by clicking the toolbar icon - see below - or navigating away
+  and back). Distinct from a toolbar popup (MV3 discards popup DOM state on
   close, which would break the "starts checking as soon as the page loads"
   behavior).
+- **toolbar icon click**: `background.js`'s `chrome.action.onClicked`
+  handler (there's no `default_popup`). Asks the active tab's overlay to
+  bring itself back if dismissed; falls back to opening the options page
+  whenever there's nothing to bring back (already visible/collapsed, or no
+  content script in this tab at all).
 - **shared secret** — the token in `.groundhog-secret` (generated once by
   `install.sh`), sent as the `X-Groundhog-Secret` header on every companion
   request except `/health`. Origin-gating, not user auth — stops arbitrary

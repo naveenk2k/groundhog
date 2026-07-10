@@ -21,6 +21,7 @@ const {
   clearWatchNote,
   toggleCollapsed,
   dismissOverlay,
+  undismissOverlay,
 } = require("./overlay-state.js");
 
 test("createOverlayState starts checking, not collapsed, not dismissed, no watch note, not already watched", () => {
@@ -80,6 +81,18 @@ test("dismissOverlay sets dismissed without touching phase/data/collapsed", () =
   const next = dismissOverlay(state);
   assert.equal(next.dismissed, true);
   assert.equal(next.phase, state.phase);
+  assert.equal(next.collapsed, state.collapsed);
+});
+
+test("undismissOverlay clears dismissed without touching phase/data/collapsed", () => {
+  let state = createOverlayState();
+  state = applyVerdictResult(state, { novelty: 5 });
+  state = toggleCollapsed(state);
+  state = dismissOverlay(state);
+  const next = undismissOverlay(state);
+  assert.equal(next.dismissed, false);
+  assert.equal(next.phase, state.phase);
+  assert.equal(next.data, state.data);
   assert.equal(next.collapsed, state.collapsed);
 });
 

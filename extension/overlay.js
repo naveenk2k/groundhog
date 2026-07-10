@@ -1144,6 +1144,23 @@ if (typeof module !== "undefined" && module.exports) {
       render();
     },
     /**
+     * Undo a dismiss, driven by a click on the extension's toolbar icon
+     * (issue #46) - content.js calls this in response to
+     * GROUNDHOG_ICON_CLICKED and reports the return value back to
+     * background.js. Returns false (does nothing) if the overlay wasn't
+     * actually dismissed, so a click while it's already visible/collapsed
+     * correctly falls through to background.js opening the options page
+     * instead of this silently no-op'ing.
+     */
+    showIfDismissed() {
+      if (!state.dismissed) {
+        return false;
+      }
+      state = undismissOverlay(state);
+      render();
+      return true;
+    },
+    /**
      * Called when background.js's postVideoWatched result (either the
      * automatic watch-threshold path or a manual "Mark as watched" click)
      * comes back for `videoId`. Ignored if the user has since navigated to

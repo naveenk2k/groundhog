@@ -145,9 +145,26 @@ function toggleCollapsed(state) {
   return { ...state, collapsed: !state.collapsed };
 }
 
-/** Fully hide the overlay for the current video. Reversed only by the next navigation's fresh createOverlayState(). */
+/**
+ * Fully hide the overlay for the current video. Previously reversible only
+ * by the next navigation's fresh createOverlayState() (a full page reload or
+ * navigating to a different video and back) - see undismissOverlay below
+ * for the in-page way back, added for issue #46.
+ */
 function dismissOverlay(state) {
   return { ...state, dismissed: true };
+}
+
+/**
+ * Undo dismissOverlay for the current video, without a navigation. Driven by
+ * a click on the extension's toolbar icon (issue #46) - background.js asks
+ * the active tab's content script to call this, and only reports back
+ * "handled" if `dismissed` was actually true, so a click while the overlay
+ * is already visible/collapsed falls through to opening the options page
+ * instead of silently doing nothing.
+ */
+function undismissOverlay(state) {
+  return { ...state, dismissed: false };
 }
 
 if (typeof module !== "undefined" && module.exports) {
@@ -162,5 +179,6 @@ if (typeof module !== "undefined" && module.exports) {
     clearWatchNote,
     toggleCollapsed,
     dismissOverlay,
+    undismissOverlay,
   };
 }

@@ -191,11 +191,6 @@ Gemini instead of Claude, why full transcripts instead of excerpts, why a
    interruption picks up where it left off instead of starting over. You can
    also add one video at a time with `python add_video.py <url-or-video-id>`.
 
-> [!TIP]
-> This is how I'm running Groundhog myself right now: clone the repo, run
-> `install.sh` to start the Python server and then load the extension to Safari. I've also backfilled my Google Takeout Youtube watch history via a script. [Issue #45](https://github.com/naveenk2k/groundhog/issues/45)
-> tracks shipping this as a single install instead.
-
 ## Day-to-day usage
 
 - The overlay runs automatically on any `youtube.com/watch` page, and can be

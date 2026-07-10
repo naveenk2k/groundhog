@@ -12,13 +12,13 @@ seen.
 
 https://github.com/user-attachments/assets/e9979aad-0d66-4792-a938-f61fc89d095d
 
-Open a video. Within a few seconds, a small overlay tells you:
+When you open a youtube video, within a few seconds, a small overlay tells you:
 
 - **How novel** it is compared to your watch history
 - **How well-executed** it is
 - **How deep** it goes
-- A plain-language recommendation, with a specific explanation (it names
-  the actual video it's comparing against, not a vague "your history")
+- A plain-language recommendation, with a specific explanation (it even names
+  the previous videos it's comparing against)
 
 It never skips or hides anything. You always decide what to watch.
 Groundhog is two pieces: a browser extension that watches what you open,
@@ -26,9 +26,10 @@ and a small local server (the companion) that does the actual thinking.
 It only covers regular `youtube.com/watch` pages, not Shorts or embedded
 players.
 
+## Examples
+
 A few real verdicts, showing the range: strong recommends, mixed calls,
-and skips, each with a specific explanation naming the exact video it's
-comparing against, not just a generic "your watch history":
+and skips, each with detailed explanations:
 
 <details>
 <summary>Groundhog overlay recommending a high-novelty tech review, scoring it 10/9/8</summary>
@@ -85,27 +86,25 @@ flowchart LR
   explanation, recommendation).
 
 The two talk over authenticated `http://127.0.0.1:8787`, gated by a shared
-secret so a random tab in your browser can't poke the companion.
+secret so a random tab in your browser can't interfere with the companion.
 
 **What happens when you open a video:**
 
 1. The extension notices the new video and asks the companion whether it's
    already in your watch history.
-2. If it is, you just get a quiet "already watched" note - no API calls
+2. If it is, you just get a quiet "already watched" message. There are no API calls
    spent re-judging something you've already seen.
 3. If it isn't, the companion fetches the transcript, embeds it, and finds
    the closest topical matches from everything you've already watched.
 4. It sends the new transcript plus those matches to Gemini, and the
    overlay shows the verdict a few seconds later.
 
-For the full design rationale (why HTTP instead of native messaging, why
+For my full design rationale (why HTTP instead of native messaging, why
 Gemini instead of Claude, why full transcripts instead of excerpts, why a
 70%/5-minute watch threshold, etc.) see [`DECISIONS.md`](DECISIONS.md).
 
 ## Prerequisites
 
-- **macOS**: the companion auto-starts via a `launchd` LaunchAgent, which is
-  macOS-specific.
 - **[`uv`](https://docs.astral.sh/uv/getting-started/installation/)** (e.g.
   `brew install uv`): `install.sh` uses it to provision Python 3.12 itself,
   so you don't need any particular Python already installed.
@@ -114,6 +113,11 @@ Gemini instead of Claude, why full transcripts instead of excerpts, why a
 - A free **Gemini API key** from [aistudio.google.com](https://aistudio.google.com)
 
 ## Setup
+
+> [!TIP]
+> This is how I'm running Groundhog myself right now: run
+> `install.sh` to start the Python server and then load the extension to Safari. I've also backfilled my Google Takeout Youtube watch history via a script. Both are one-time tasks. [Issue #45](https://github.com/naveenk2k/groundhog/issues/45)
+> tracks shipping the whole thing as a single install instead.
 
 1. **Clone the repo and run the installer:**
 
@@ -187,28 +191,19 @@ Gemini instead of Claude, why full transcripts instead of excerpts, why a
    interruption picks up where it left off instead of starting over. You can
    also add one video at a time with `python add_video.py <url-or-video-id>`.
 
+> [!TIP]
+> This is how I'm running Groundhog myself right now: clone the repo, run
+> `install.sh` to start the Python server and then load the extension to Safari. I've also backfilled my Google Takeout Youtube watch history via a script. [Issue #45](https://github.com/naveenk2k/groundhog/issues/45)
+> tracks shipping this as a single install instead.
+
 ## Day-to-day usage
 
-Open any `youtube.com/watch` page. The overlay appears in the bottom-right
-corner showing "Checking your watch history…" immediately, then fills in
-with scores and a recommendation within a few seconds (transcript retrieval
-alone typically takes 2-4 seconds, so the whole pipeline usually lands in
-well under 10 seconds). Its header has a gear icon to open the options page
-directly, plus the usual collapse-to-a-pill and dismiss-entirely buttons -
-click the Groundhog toolbar icon to bring back a dismissed overlay for the
-current video without reloading the page,
-or press **Cmd+G** (Ctrl+G on Windows/Linux) to toggle it open/closed
-directly from the keyboard. **Cmd+Shift+G** opens or closes the options
-page the same way. These are suggested default bindings and should work
-without any manual setup despite Cmd+G also being "Find Next" in most
-browsers, but check once after installing - if yours doesn't pick it up,
-or you'd rather use different keys, reassign it under
-`chrome://extensions/shortcuts` (Chrome) or Safari's own Extensions
-preferences.
-
-Once you watch a video past 70% or 5 minutes, whichever comes first,
-Groundhog fetches it, embeds it, and adds it to the corpus automatically.
-You don't need to do anything else after the initial backfill.
+- The overlay runs automatically on any `youtube.com/watch` page, and can be
+  collapsed to a pill or dismissed.
+- **Cmd+G** and **Cmd+Shift+G** (Ctrl on Windows/Linux) are set up as default
+  shortcuts for the overlay and options page.
+- A video gets added to your watch history automatically once you watch
+  past 70% or 5 minutes, whichever comes first.
 
 ## Configuration
 
@@ -245,7 +240,7 @@ cd extension && npm test
 
 ## Project status
 
-This is a personal, experimental project, not production software. It works
+This is largely a personal, experimental project to help me consume new and better content. It works
 end to end (transcript fetch → embed → vector search → Gemini verdict →
 overlay), but a few things are worth knowing:
 
@@ -253,13 +248,10 @@ overlay), but a few things are worth knowing:
   `android_vr` client being exempt from YouTube's PO-token requirement, which
   could change at any time. See [`DECISIONS.md`](DECISIONS.md) for the
   fallback plan if that happens.
-- **No spend cap.** There's no tracked ceiling on Gemini API usage yet.
+- **No spend cap.** There's no tracked ceiling on Gemini API usage yet, just a simple email notification.
 
 Shorts, embedded players on other sites, and any kind of auto-pause or
-auto-skip are intentionally out of scope, not just postponed. For what's
-planned or deferred, check the [open issues](../../issues) rather than a
-static list here, since that's where actual backlog decisions get made and
-it stays current on its own.
+auto-skip are intentionally out of scope. For any improvements in the works, see the [open issues](../../issues).
 
 ## License
 

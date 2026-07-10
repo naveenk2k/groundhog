@@ -225,6 +225,12 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     sendResponse({ handled: GroundhogOverlay.showIfDismissed() });
     return;
   }
+  if (message.type === "GROUNDHOG_TOGGLE_OVERLAY") {
+    // The Cmd+G keyboard shortcut - a real open/close toggle, unlike
+    // GROUNDHOG_ICON_CLICKED above which only ever un-hides.
+    GroundhogOverlay.toggleVisibility();
+    return;
+  }
   if (message.type === "GROUNDHOG_VERDICT_RESULT" || message.type === "GROUNDHOG_WATCHED_RESULT") {
     // See CONTENT_INSTANCE_ID's docs above - document.hidden/visibilityState
     // and whether the overlay host is actually attached distinguish a live,

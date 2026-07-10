@@ -1161,6 +1161,17 @@ if (typeof module !== "undefined" && module.exports) {
       return true;
     },
     /**
+     * A real open/close toggle for the overlay, driven by the Cmd+G
+     * keyboard shortcut (manifest.json's "toggle-overlay" command) - unlike
+     * showIfDismissed above, which only ever un-hides, this dismisses an
+     * already-visible (or collapsed) overlay just as readily as it
+     * un-hides a dismissed one.
+     */
+    toggleVisibility() {
+      state = state.dismissed ? undismissOverlay(state) : dismissOverlay(state);
+      render();
+    },
+    /**
      * Called when background.js's postVideoWatched result (either the
      * automatic watch-threshold path or a manual "Mark as watched" click)
      * comes back for `videoId`. Ignored if the user has since navigated to

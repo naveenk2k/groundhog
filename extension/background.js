@@ -64,6 +64,55 @@ async function readSecret() {
   return groundhogSecret || null;
 }
 
+// The extension's own options.html URL, used below to recognize an
+// already-open options tab. Reading tab.url for the extension's own pages
+// doesn't need the "tabs" permission (that redaction only applies to other
+// sites' tabs) - queried and filtered manually here rather than via
+// chrome.tabs.query's own `url` match-pattern filter, since that filter's
+// permission requirements are murkier than just reading `.url` off tabs
+// this extension already has full visibility into.
+const OPTIONS_URL = chrome.runtime.getURL("options.html");
+
+async function findOptionsTab() {
+  const tabs = await chrome.tabs.query({});
+  return tabs.find((tab) => tab.url === OPTIONS_URL) || null;
+}
+
+/**
+ * Open the options page, or just focus it if a tab already has it open -
+ * repeatedly calling chrome.runtime.openOptionsPage() opens a fresh tab
+ * every time rather than reusing one, which is exactly the "clicking the
+ * icon keeps opening more and more settings pages" bug this fixes. Used by
+ * both the toolbar icon click's fallback (below) and the overlay's "Open
+ * settings" button (GROUNDHOG_OPEN_OPTIONS).
+ */
+async function openOrFocusOptionsPage() {
+  const existing = await findOptionsTab();
+  if (existing) {
+    await chrome.tabs.update(existing.id, { active: true });
+    if (existing.windowId != null) {
+      await chrome.windows.update(existing.windowId, { focused: true });
+    }
+    return;
+  }
+  chrome.runtime.openOptionsPage();
+}
+
+/**
+ * True toggle - closes an already-open options tab instead of just
+ * focusing it. Used by the toggle-options keyboard command (Cmd+Shift+G),
+ * which is explicitly meant to open *or* close it, unlike the icon click's
+ * fallback above, which only ever wants to end up with the page open.
+ */
+async function toggleOptionsPage() {
+  const existing = await findOptionsTab();
+  if (existing) {
+    await chrome.tabs.remove(existing.id);
+    return;
+  }
+  chrome.runtime.openOptionsPage();
+}
+
 // Falls back to DEFAULT_K (options-k.js) if it's never been set - e.g. the
 // very first run before the user has ever opened the options page - so
 // behavior is identical whether or not the options page has been opened
@@ -395,7 +444,7 @@ chrome.runtime.onMessage.addListener((message, sender) => {
     // The background worker always has full chrome.runtime access, unlike
     // the content script the overlay's "Open settings" button lives in -
     // see content.js's GroundhogOverlay.onOpenSettingsClick.
-    chrome.runtime.openOptionsPage();
+    openOrFocusOptionsPage();
   }
 });
 
@@ -403,26 +452,61 @@ chrome.runtime.onMessage.addListener((message, sender) => {
  * Clicking the toolbar icon (issue #46 - previously a dead click, since no
  * default_popup was ever declared) asks the active tab's content script to
  * bring back a dismissed overlay for the current video. Falls through to
- * opening the options page whenever there's nothing to bring back: the
- * content script reports `{ handled: false }` (overlay already
- * visible/collapsed, not dismissed), or the sendMessage itself fails
- * (no content script in this tab at all - not a YouTube watch page, or the
- * extension context is stale). Either way, a plain left-click on the icon
- * should always do *something* useful, never nothing.
+ * opening (or focusing an already-open) options page whenever there's
+ * nothing to bring back: the content script reports `{ handled: false }`
+ * (overlay already visible/collapsed, not dismissed), or the sendMessage
+ * itself fails (no content script in this tab at all - not a YouTube watch
+ * page, or the extension context is stale). Either way, a plain left-click
+ * on the icon should always do *something* useful, never nothing.
  */
 chrome.action.onClicked.addListener((tab) => {
   if (tab.id == null) {
-    chrome.runtime.openOptionsPage();
+    openOrFocusOptionsPage();
     return;
   }
   chrome.tabs
     .sendMessage(tab.id, { type: "GROUNDHOG_ICON_CLICKED" })
     .then((response) => {
       if (!response || !response.handled) {
-        chrome.runtime.openOptionsPage();
+        openOrFocusOptionsPage();
       }
     })
     .catch(() => {
-      chrome.runtime.openOptionsPage();
+      openOrFocusOptionsPage();
     });
+});
+
+/**
+ * Keyboard shortcuts (manifest.json's "commands", Cmd+G / Cmd+Shift+G on
+ * mac by default): "toggle-overlay" asks the active tab to show/hide its
+ * overlay directly (a real open/close toggle, unlike the icon click above,
+ * which only ever un-hides - it never re-dismisses); "toggle-options"
+ * opens or closes the options tab the same way. Both are plain keyboard
+ * commands, not tied to any specific tab being clicked, so the active tab
+ * has to be looked up first.
+ *
+ * Note: Cmd+G is "Find Next" in most macOS apps, including both Chrome and
+ * Safari - the browser may not actually bind the suggested key without the
+ * user manually assigning it (chrome://extensions/shortcuts in Chrome;
+ * Safari's own Extensions preferences), since a real conflict with an
+ * existing browser shortcut isn't silently overridden.
+ */
+chrome.commands.onCommand.addListener((command) => {
+  if (command === "toggle-options") {
+    toggleOptionsPage();
+    return;
+  }
+  if (command !== "toggle-overlay") {
+    return;
+  }
+  chrome.tabs.query({ active: true, currentWindow: true }, ([tab]) => {
+    if (!tab || tab.id == null) {
+      return;
+    }
+    // No fallback needed here, unlike the icon click - a keyboard shortcut
+    // silently doing nothing on a tab with no overlay to toggle (not a
+    // YouTube watch page) is expected, not a dead-click surprise the way a
+    // visible icon doing nothing would be.
+    chrome.tabs.sendMessage(tab.id, { type: "GROUNDHOG_TOGGLE_OVERLAY" }).catch(() => {});
+  });
 });

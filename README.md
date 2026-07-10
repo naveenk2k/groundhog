@@ -170,7 +170,15 @@ with scores and a recommendation within a few seconds (transcript retrieval
 alone typically takes 2-4 seconds, so the whole pipeline usually lands in
 well under 10 seconds). You can collapse it to a small pill or dismiss it
 entirely from its header buttons - click the Groundhog toolbar icon to bring
-back a dismissed overlay for the current video without reloading the page.
+back a dismissed overlay for the current video without reloading the page,
+or press **Cmd+G** (Ctrl+G on Windows/Linux) to toggle it open/closed
+directly from the keyboard. **Cmd+Shift+G** opens or closes the options
+page the same way. These are suggested default bindings and should work
+without any manual setup despite Cmd+G also being "Find Next" in most
+browsers, but check once after installing - if yours doesn't pick it up,
+or you'd rather use different keys, reassign it under
+`chrome://extensions/shortcuts` (Chrome) or Safari's own Extensions
+preferences.
 
 Once you watch a video past 70% or 5 minutes, whichever comes first,
 Groundhog fetches it, embeds it, and adds it to the corpus automatically.

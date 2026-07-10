@@ -56,9 +56,17 @@ drifting to synonyms.
   behavior).
 - **toolbar icon click**: `background.js`'s `chrome.action.onClicked`
   handler (there's no `default_popup`). Asks the active tab's overlay to
-  bring itself back if dismissed; falls back to opening the options page
-  whenever there's nothing to bring back (already visible/collapsed, or no
-  content script in this tab at all).
+  bring itself back if dismissed; falls back to opening (or focusing an
+  already-open) options page whenever there's nothing to bring back
+  (already visible/collapsed, or no content script in this tab at all).
+- **keyboard commands**: `manifest.json`'s `commands`, handled by
+  `background.js`'s `chrome.commands.onCommand` listener. `toggle-overlay`
+  (Cmd+G by default) is a real open/close toggle for the current tab's
+  overlay, unlike the icon click above which only ever un-hides.
+  `toggle-options` (Cmd+Shift+G) opens or closes the options tab the same
+  way. Suggested keys - should bind automatically despite Cmd+G also being
+  "Find Next" almost everywhere, but worth checking once per browser after
+  installing, and reassignable if it doesn't or conflicts.
 - **shared secret** — the token in `.groundhog-secret` (generated once by
   `install.sh`), sent as the `X-Groundhog-Secret` header on every companion
   request except `/health`. Origin-gating, not user auth — stops arbitrary

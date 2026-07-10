@@ -13,6 +13,22 @@
     "service_worker": "background.js"
   },
   "action": {},
+  "commands": {
+    "toggle-overlay": {
+      "suggested_key": {
+        "default": "Ctrl+G",
+        "mac": "Command+G"
+      },
+      "description": "Show or hide the Groundhog overlay on the current video"
+    },
+    "toggle-options": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+G",
+        "mac": "Command+Shift+G"
+      },
+      "description": "Open or close the Groundhog options page"
+    }
+  },
   "options_ui": {
     "page": "options.html",
     "open_in_tab": false

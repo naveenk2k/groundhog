@@ -687,6 +687,17 @@ if (typeof module !== "undefined" && module.exports) {
     headerButtons.className = "ghog-header-buttons";
     header.appendChild(headerButtons);
 
+    const settingsBtn = document.createElement("button");
+    settingsBtn.className = "ghog-icon-btn";
+    settingsBtn.title = "Open settings";
+    settingsBtn.textContent = "⚙"; // gear
+    settingsBtn.addEventListener("click", () => {
+      if (typeof GroundhogOverlay.onOpenSettingsClick === "function") {
+        GroundhogOverlay.onOpenSettingsClick();
+      }
+    });
+    headerButtons.appendChild(settingsBtn);
+
     const collapseBtn = document.createElement("button");
     collapseBtn.className = "ghog-icon-btn";
     collapseBtn.title = "Collapse";

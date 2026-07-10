@@ -168,9 +168,10 @@ Open any `youtube.com/watch` page. The overlay appears in the bottom-right
 corner showing "Checking your watch history…" immediately, then fills in
 with scores and a recommendation within a few seconds (transcript retrieval
 alone typically takes 2-4 seconds, so the whole pipeline usually lands in
-well under 10 seconds). You can collapse it to a small pill or dismiss it
-entirely from its header buttons - click the Groundhog toolbar icon to bring
-back a dismissed overlay for the current video without reloading the page,
+well under 10 seconds). Its header has a gear icon to open the options page
+directly, plus the usual collapse-to-a-pill and dismiss-entirely buttons -
+click the Groundhog toolbar icon to bring back a dismissed overlay for the
+current video without reloading the page,
 or press **Cmd+G** (Ctrl+G on Windows/Linux) to toggle it open/closed
 directly from the keyboard. **Cmd+Shift+G** opens or closes the options
 page the same way. These are suggested default bindings and should work
@@ -191,7 +192,7 @@ icon (or `chrome://extensions` → Groundhog → Options) - has:
 
 - **Shared secret**: pasted from `.groundhog-secret`, required for the
   extension to authenticate to the companion.
-- **K (videos compared per check)**: a 1–10 slider for how many of your
+- **K (videos compared per check)**: a 1-10 slider for how many of your
   closest-matching watched videos (by vector search) get sent to Gemini
   alongside the new video for comparison. Higher K is a more thorough (and
   more expensive/slower) check; lower is cheaper and faster. Defaults to 5.

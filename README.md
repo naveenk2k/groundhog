@@ -10,6 +10,8 @@ before you spend time on it. That way you can tell whether it's actually
 saying something new, or just another take on something you've already
 seen.
 
+https://github.com/user-attachments/assets/e9979aad-0d66-4792-a938-f61fc89d095d
+
 Open a video. Within a few seconds, a small overlay tells you:
 
 - **How novel** it is compared to your watch history
@@ -24,19 +26,37 @@ and a small local server (the companion) that does the actual thinking.
 It only covers regular `youtube.com/watch` pages, not Shorts or embedded
 players.
 
-![Groundhog overlay showing a verdict on a real YouTube video](docs/screenshots/overlay-in-context.jpeg)
+A few real verdicts, showing the range: strong recommends, mixed calls,
+and skips, each with a specific explanation naming the exact video it's
+comparing against, not just a generic "your watch history":
 
-A closer look at a real verdict: scores plus a specific, grounded
-explanation that names the exact video it's comparing against, not just a
-generic "your watch history":
+<details>
+<summary>Groundhog overlay recommending a high-novelty tech review, scoring it 10/9/8</summary>
 
-![Close-up of a Groundhog verdict with novelty/execution/depth scores and a specific explanation](docs/screenshots/overlay-verdict-closeup.png)
+![Groundhog overlay recommending a high-novelty tech review, scoring it 10/9/8](docs/screenshots/overlay-in-context.jpeg)
 
-When it can't form an opinion (no transcript, the companion isn't running,
-or the model call failed), it shows the same neutral "can't evaluate" badge
-instead of guessing or failing silently:
+</details>
 
-![Groundhog overlay showing the "can't evaluate" state](docs/screenshots/overlay-cant-evaluate.png)
+<details>
+<summary>Groundhog overlay giving a moderate 7/8/8 verdict on a video with some overlap with prior watch history</summary>
+
+![Groundhog overlay giving a moderate 7/8/8 verdict on a video with some overlap with prior watch history](docs/screenshots/overlay-verdict-closeup.png)
+
+</details>
+
+<details>
+<summary>Groundhog overlay scoring a technical deep dive 7/9/9 for going further than a similar video already watched</summary>
+
+![Groundhog overlay scoring a technical deep dive 7/9/9 for going further than a similar video already watched](docs/screenshots/SCR-20260708-nafm.png)
+
+</details>
+
+<details>
+<summary>Groundhog overlay recommending a skip, scoring a video 3/7/5 for covering ground already seen that week</summary>
+
+![Groundhog overlay recommending a skip, scoring a video 3/7/5 for covering ground already seen that week](docs/screenshots/SCR-20260711-bxpn.jpeg)
+
+</details>
 
 ## Architecture at a glance
 

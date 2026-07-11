@@ -7,14 +7,17 @@ companion/verdict_pipeline.py; transcript fetching lives in
 companion/transcript.py and corpus storage in companion/corpus.py.
 """
 
+import json
 import logging
 from typing import Optional
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.responses import Response
 
-from companion import corpus
+from companion import config, corpus
 from companion.auth import SecretAuthMiddleware
 from companion.transcript import fetch_transcript
 from companion.verdict_pipeline import add_watched_video, run_verdict_pipeline
@@ -39,12 +42,93 @@ from companion.verdict_pipeline import add_watched_video, run_verdict_pipeline
 # (answering "did this video's request reach the companion?"), and wiring
 # custom uvicorn log config through the launchd CLI invocation is a
 # separate, install.sh-scoped concern.
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+# The trailing "\n" puts a blank line after every record (on top of the
+# handler's own line break), so entries in .logs/companion.log stay visually
+# separated instead of running together as one dense block.
+logging.basicConfig(
+    level=logging.DEBUG if config.DEBUG else logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s\n",
+)
 
 # basicConfig's level applies to every unconfigured logger, not just ours.
-# Quiet httpx's and google-genai's own per-request INFO noise.
-for _noisy_logger in ("httpx", "google_genai"):
+# Quiet httpx's and google-genai's own per-request INFO noise, and (when
+# GROUNDHOG_DEBUG bumps the root level to DEBUG) asyncio's internal
+# selector-loop chatter, none of which is relevant to tracing a request.
+for _noisy_logger in ("httpx", "google_genai", "asyncio"):
     logging.getLogger(_noisy_logger).setLevel(logging.WARNING)
+
+debug_logger = logging.getLogger("companion.debug")
+
+# Full transcripts can run to tens of thousands of characters - logging one
+# in full on every request would make .logs/companion.log both huge and
+# mostly noise. A head/tail preview is enough to confirm the right text is
+# flowing through the pipeline without paying that cost.
+_TRANSCRIPT_PREVIEW_HEAD_CHARS = 200
+_TRANSCRIPT_PREVIEW_TAIL_CHARS = 100
+
+
+def _render_body_for_logging(body: bytes) -> str:
+    """Renders a request/response body for the debug log, truncating a
+    top-level "transcript" string field (if present) to a head/tail preview.
+
+    Falls back to the raw decoded bytes for anything that isn't a JSON
+    object with a "transcript" field - most bodies here (video IDs, verdict
+    scores) are already short.
+    """
+    try:
+        parsed = json.loads(body)
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return body.decode("utf-8", "replace")
+
+    if isinstance(parsed, dict) and isinstance(parsed.get("transcript"), str):
+        transcript = parsed["transcript"]
+        preview_len = _TRANSCRIPT_PREVIEW_HEAD_CHARS + _TRANSCRIPT_PREVIEW_TAIL_CHARS
+        if len(transcript) > preview_len:
+            omitted = len(transcript) - preview_len
+            parsed["transcript"] = (
+                f"{transcript[:_TRANSCRIPT_PREVIEW_HEAD_CHARS]}"
+                f" ...[{omitted} chars omitted]... "
+                f"{transcript[-_TRANSCRIPT_PREVIEW_TAIL_CHARS:]}"
+            )
+
+    return json.dumps(parsed)
+
+
+class DebugLoggingMiddleware(BaseHTTPMiddleware):
+    """Logs every request/response body, with transcript fields truncated
+    to a short preview (see _render_body_for_logging).
+
+    Only mounted when config.DEBUG is set (see app setup below) - this is
+    for tracing the data trail moving through the companion by hand, not
+    something that should run by default.
+    """
+
+    async def dispatch(self, request, call_next):
+        request_body = await request.body()
+        debug_logger.debug(
+            "--> %s %s\n%s", request.method, request.url.path, _render_body_for_logging(request_body)
+        )
+
+        response = await call_next(request)
+
+        response_body = b""
+        async for chunk in response.body_iterator:
+            response_body += chunk
+        debug_logger.debug(
+            "<-- %s %s %s\n%s",
+            request.method,
+            request.url.path,
+            response.status_code,
+            _render_body_for_logging(response_body),
+        )
+
+        return Response(
+            content=response_body,
+            status_code=response.status_code,
+            headers=dict(response.headers),
+            media_type=response.media_type,
+        )
+
 
 app = FastAPI(title="Groundhog companion")
 app.add_middleware(SecretAuthMiddleware)
@@ -63,6 +147,11 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+# Added last so it's outermost (see the middleware-ordering note above) and
+# sees every request/response, including ones CORS or auth would otherwise
+# short-circuit.
+if config.DEBUG:
+    app.add_middleware(DebugLoggingMiddleware)
 
 # Lazy singleton: opening the corpus connection (and, via embed_text, loading
 # the sentence-transformers model on first use) is expensive enough that we

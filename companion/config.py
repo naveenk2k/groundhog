@@ -33,6 +33,13 @@ CORPUS_DB_FILE = Path(os.environ.get("GROUNDHOG_CORPUS_DB", str(REPO_ROOT / "cor
 EMBEDDING_MODEL_NAME = "all-MiniLM-L6-v2"
 EMBEDDING_DIMENSIONS = 384
 
+# Off by default: request/response bodies include full video transcripts and
+# LLM output, so logging them unconditionally would flood .logs/companion.log
+# and write transcript text to disk on every request. Set
+# GROUNDHOG_DEBUG=1 (e.g. `GROUNDHOG_DEBUG=1 uvicorn companion.app:app ...`)
+# to trace the actual request/response bodies moving through the companion.
+DEBUG = os.environ.get("GROUNDHOG_DEBUG", "").strip().lower() in ("1", "true", "yes")
+
 
 def read_secret() -> str:
     """Read the shared secret from disk.

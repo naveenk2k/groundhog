@@ -80,7 +80,7 @@ class GetVideoLookupTest(unittest.TestCase):
             "irrelevant transcript text",
         )
 
-    def test_found_video_reports_found_with_title_and_watched_at(self):
+    def test_found_video_reports_found_with_title_creator_and_watched_at(self):
         response = self.client.get(
             "/videos/already_watched_id", headers={SECRET_HEADER: "test-secret"}
         )
@@ -90,6 +90,7 @@ class GetVideoLookupTest(unittest.TestCase):
             {
                 "found": True,
                 "title": "A Video I've Already Watched",
+                "creator": "Some Creator",
                 "watched_at": "2026-01-05T10:00:00Z",
             },
         )

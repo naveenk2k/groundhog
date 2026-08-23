@@ -231,7 +231,12 @@ async def get_video(video_id: str) -> dict:
     found = corpus.find_video(_get_corpus_conn(), video_id)
     if found is None:
         return {"found": False}
-    return {"found": True, "title": found["title"], "watched_at": found["watched_at"]}
+    return {
+        "found": True,
+        "title": found["title"],
+        "creator": found["creator"],
+        "watched_at": found["watched_at"],
+    }
 
 
 class WatchedVideoRequest(BaseModel):

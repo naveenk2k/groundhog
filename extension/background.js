@@ -286,8 +286,8 @@ async function lookupVideo(videoId) {
     if (!response.ok) {
       return { found: false };
     }
-    // { found: true, title, watched_at } or { found: false } - already the
-    // shape the overlay needs, just pass it through.
+    // { found: true, title, creator, watched_at } or { found: false } -
+    // already the shape the overlay needs, just pass it through.
     return await response.json();
   } catch (err) {
     // The companion may just not be running - fail open, same as above.

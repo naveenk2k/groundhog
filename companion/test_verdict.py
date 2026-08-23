@@ -53,6 +53,26 @@ class GetVerdictTest(unittest.TestCase):
         self.assertEqual(result["novelty"], 7)
         self.assertNotIn("error", result)
 
+    def test_success_echoes_title_and_creator_from_new_video(self):
+        # title/creator aren't part of Gemini's structured response (see
+        # _VERDICT_SCHEMA) - get_verdict attaches them itself from the
+        # NewVideo it was called with, so the overlay can label which video
+        # a verdict is for (issue #47).
+        response = MagicMock()
+        response.parsed = {
+            "novelty": 7,
+            "execution": 8,
+            "depth": 6,
+            "explanation": "explanation",
+            "recommendation": "watch it",
+        }
+        client = _fake_client(generate_content_result=response)
+
+        result = verdict.get_verdict(NEW_VIDEO, [], client=client)
+
+        self.assertEqual(result["title"], "New Video")
+        self.assertEqual(result["creator"], "Some Channel")
+
     def test_gemini_429_maps_to_busy_message(self):
         client = _fake_client(
             generate_content_side_effect=errors.ClientError(429, {"message": "rate limited"})

@@ -191,6 +191,7 @@ class CorpusTest(unittest.TestCase):
         self.assertEqual(found, {
             "video_id": "k8s_intro",
             "title": "Kubernetes Basics for Beginners",
+            "creator": "DevOps Toolbox",
             "watched_at": "2026-01-07T10:00:00Z",
         })
 

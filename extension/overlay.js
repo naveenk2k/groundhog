@@ -563,6 +563,19 @@ if (typeof module !== "undefined" && module.exports) {
       background: var(--ghog-track);
     }
 
+    /* Video title/creator line - identifies which video the panel is about.
+     * Kept visually secondary (same weight as .ghog-explanation) since the
+     * recommendation, not the video's own name, is still the headline. */
+    .ghog-video-meta {
+      font-size: 11px;
+      color: var(--ghog-fg-secondary);
+      line-height: 1.4;
+      margin-bottom: 8px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
     /* Recommendation is the single most prominent line in the panel - the
      * actual "should I watch this" takeaway. Everything else (scores,
      * explanation) is visually secondary. */
@@ -687,6 +700,24 @@ if (typeof module !== "undefined" && module.exports) {
     headerButtons.className = "ghog-header-buttons";
     header.appendChild(headerButtons);
 
+    // Re-run button for a verdict already on screen - reuses the same
+    // onRetryClick path the error phase's body "Retry" button already uses
+    // (content.js's onRetryClick bypasses the lastPostedVideoId dedupe, so a
+    // fresh GROUNDHOG_VIDEO_OPENED request fires for the same video). Only
+    // shown once a verdict is actually showing (see render() below) - a
+    // reload during "checking"/"error"/"watched"/"stale" either duplicates
+    // an in-flight request or has nothing to re-run.
+    const reloadBtn = document.createElement("button");
+    reloadBtn.className = "ghog-icon-btn";
+    reloadBtn.title = "Re-check this video";
+    reloadBtn.textContent = "⟳";
+    reloadBtn.addEventListener("click", () => {
+      if (typeof GroundhogOverlay.onRetryClick === "function" && currentVideoId) {
+        GroundhogOverlay.onRetryClick(currentVideoId);
+      }
+    });
+    headerButtons.appendChild(reloadBtn);
+
     const settingsBtn = document.createElement("button");
     settingsBtn.className = "ghog-icon-btn";
     settingsBtn.title = "Open settings";
@@ -759,7 +790,7 @@ if (typeof module !== "undefined" && module.exports) {
     });
     root.appendChild(badge);
 
-    els = { host, root, panel, body, footer, markWatchedBtn, watchNote, badge };
+    els = { host, root, panel, body, footer, markWatchedBtn, watchNote, badge, reloadBtn };
   }
 
   /** Build the body's inner content for the current state. Pure DOM construction, no side effects on `state`. */
@@ -803,12 +834,21 @@ if (typeof module !== "undefined" && module.exports) {
       text.appendChild(label);
 
       const info = state.data || {};
+      if (info.title) {
+        const titleEl = document.createElement("div");
+        titleEl.className = "ghog-video-meta";
+        titleEl.textContent = info.creator ? info.title + " - " + info.creator : info.title;
+        text.appendChild(titleEl);
+      }
+      // watched_at can be missing (e.g. a row inserted before this column
+      // existed) - only the label above is guaranteed, so this stays inside
+      // its own conditional rather than assuming a date is always present.
       if (info.watched_at) {
         const date = new Date(info.watched_at);
         if (!isNaN(date.getTime())) {
           const reason = document.createElement("div");
           reason.className = "ghog-cant-evaluate-reason";
-          reason.textContent = "Watched " + date.toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" });
+          reason.textContent = "When I watched it: " + date.toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" });
           text.appendChild(reason);
         }
       }
@@ -917,6 +957,17 @@ if (typeof module !== "undefined" && module.exports) {
     // phase === "verdict"
     const verdict = state.data || {};
 
+    // title/creator come straight from companion/verdict.py's Verdict
+    // (sourced from yt-dlp, see companion/transcript.py) - only rendered
+    // when at least the title resolved, since yt-dlp can leave both empty
+    // for some videos (see transcript.py's _extract_creator).
+    if (verdict.title) {
+      const meta = document.createElement("div");
+      meta.className = "ghog-video-meta";
+      meta.textContent = verdict.creator ? verdict.title + " - " + verdict.creator : verdict.title;
+      body.appendChild(meta);
+    }
+
     const recommendation = document.createElement("div");
     recommendation.className = "ghog-recommendation";
     recommendation.textContent = verdict.recommendation || "";
@@ -1001,6 +1052,7 @@ if (typeof module !== "undefined" && module.exports) {
       els.badge.classList.remove("ghog-visible");
       els.badge.style.display = "none";
       els.panel.style.display = "block";
+      els.reloadBtn.style.display = state.phase === "verdict" ? "" : "none";
       renderBody();
       renderFooter();
       void els.panel.offsetWidth;

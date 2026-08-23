@@ -319,16 +319,16 @@ def find_video(conn: apsw.Connection, video_id: str) -> Optional[dict]:
     work (see the extension's GROUNDHOG_VIDEO_LOOKUP), so that check is
     cheap enough to run on every video-opened navigation.
 
-    Returns None if not found, else {"video_id", "title", "watched_at"}.
+    Returns None if not found, else {"video_id", "title", "creator", "watched_at"}.
     """
     row = conn.execute(
-        "SELECT video_id, title, watched_at FROM videos WHERE video_id = ?",
+        "SELECT video_id, title, creator, watched_at FROM videos WHERE video_id = ?",
         (video_id,),
     ).fetchone()
     if row is None:
         return None
-    found_video_id, title, watched_at = row
-    return {"video_id": found_video_id, "title": title, "watched_at": watched_at}
+    found_video_id, title, creator, watched_at = row
+    return {"video_id": found_video_id, "title": title, "creator": creator, "watched_at": watched_at}
 
 
 def query_similar(

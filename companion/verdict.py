@@ -182,6 +182,12 @@ class Verdict(TypedDict):
     depth: int
     explanation: str
     recommendation: str
+    # Echoed back from the NewVideo already passed into get_verdict (see
+    # transcript.py, which is where these actually come from) rather than
+    # asked of Gemini - the overlay needs them to label which video a verdict
+    # is for (issue #47), but they're not part of the judgment itself.
+    title: str
+    creator: str
 
 
 class VerdictErrorResult(TypedDict):
@@ -362,4 +368,6 @@ def get_verdict(
         "depth": data["depth"],
         "explanation": data["explanation"],
         "recommendation": data["recommendation"],
+        "title": new_video.title,
+        "creator": new_video.creator,
     }

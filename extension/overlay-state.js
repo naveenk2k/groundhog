@@ -8,7 +8,7 @@
  * Shape of the state object:
  *   {
  *     phase: "checking" | "verdict" | "error" | "stale" | "watched",
- *     data: null | <verdict object from /verdict> | <{ message, code } for phase "error"> | <{ title, watched_at } for phase "watched">,
+ *     data: null | <verdict object from /verdict, includes title/creator> | <{ message, code } for phase "error"> | <{ title, creator, watched_at } for phase "watched">,
  *     collapsed: boolean,   // true = shown as a small corner badge only
  *     dismissed: boolean,   // true = fully hidden until the next navigation
  *     watchNote: null | { kind: "success" | "failure", message: string },
@@ -84,7 +84,7 @@ function markContextInvalidated(state) {
  * GROUNDHOG_VIDEO_LOOKUP, fired before ever requesting a verdict) found
  * this video already in the corpus, so there's no verdict to show and no
  * point spending a Gemini call on it. `info` is the companion's lookup
- * result shape ({ title, watched_at }) or null/undefined if the caller
+ * result shape ({ title, creator, watched_at }) or null/undefined if the caller
  * doesn't have it. Also flips `alreadyWatched`, same as
  * setAlreadyWatchedFlag - see that function's docs for why the two are
  * tracked separately from `phase`.

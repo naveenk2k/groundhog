@@ -423,14 +423,14 @@ if (typeof module !== "undefined" && module.exports) {
     .ghog-icon-btn {
       all: unset;
       cursor: pointer;
-      width: 26px;
-      height: 26px;
+      width: 32px;
+      height: 32px;
       display: flex;
       align-items: center;
       justify-content: center;
       border-radius: 999px;
       color: var(--ghog-fg-secondary);
-      font-size: 16px;
+      font-size: 19px;
       line-height: 1;
     }
     .ghog-icon-btn:hover {
@@ -439,6 +439,12 @@ if (typeof module !== "undefined" && module.exports) {
 
     .ghog-body {
       padding: 10px 12px 12px;
+      /* Verdicts can run long (explanation + recommendation are open-ended
+       * model output) - cap the popup's height and let this scroll
+       * internally instead of the panel growing to fill arbitrarily long
+       * text. min() keeps it viewport-safe on short windows too. */
+      max-height: min(70vh, 480px);
+      overflow-y: auto;
     }
 
     .ghog-checking {

@@ -40,7 +40,11 @@ def configure_tracing() -> None:
     import ddtrace
 
     ddtrace.config.service = "groundhog-companion"
-    ddtrace.patch_all()
+    # Only the two integrations actually in play here (FastAPI's own routes,
+    # and the httpx calls verdict.py/tracing.py make) - patch_all() instruments
+    # everything ddtrace knows how to, most of which this companion never
+    # uses, and is deprecated in favor of naming exactly what's needed.
+    ddtrace.patch(fastapi=True, httpx=True)
 
     agent_host = os.environ.get("DD_AGENT_HOST", "localhost")
     agent_port = os.environ.get("DD_TRACE_AGENT_PORT", "8126")

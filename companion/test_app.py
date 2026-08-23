@@ -43,6 +43,15 @@ companion_config.SECRET_FILE = Path(tempfile.mktemp())
 companion_config.SECRET_FILE.write_text("test-secret")
 corpus.CORPUS_DB_FILE = Path(tempfile.mktemp(suffix=".sqlite"))
 
+# Same reasoning as above, for a third setting: importing companion.app
+# calls tracing.configure_tracing() at module load time, which - if
+# GROUNDHOG_TRACING_ENABLED happens to be set in whoever's shell runs the
+# tests - would instrument this whole test process for real (ddtrace's
+# patch(), a live Agent reachability check) instead of running the tests
+# it's actually meant to. Forcing it off here keeps test runs deterministic
+# regardless of the ambient environment.
+companion_config.TRACING_ENABLED = False
+
 from companion.app import app  # noqa: E402 - must follow the patching above
 
 

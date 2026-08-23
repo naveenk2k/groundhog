@@ -37,7 +37,7 @@ class ConfigureTracingTest(unittest.TestCase):
     def test_enabled_with_reachable_agent_enables_tracing_and_logs_nothing(self):
         config.TRACING_ENABLED = True
         with patch("companion.tracing.httpx.get") as mock_get:
-            with patch("ddtrace.patch_all"):
+            with patch("ddtrace.patch"):
                 mock_get.return_value.raise_for_status.return_value = None
                 with self.assertNoLogs("companion.tracing", level="WARNING"):
                     tracing.configure_tracing()
@@ -47,7 +47,7 @@ class ConfigureTracingTest(unittest.TestCase):
     def test_enabled_with_unreachable_agent_still_enables_but_warns(self):
         config.TRACING_ENABLED = True
         with patch("companion.tracing.httpx.get", side_effect=httpx.ConnectError("refused")):
-            with patch("ddtrace.patch_all"):
+            with patch("ddtrace.patch"):
                 with self.assertLogs("companion.tracing", level="WARNING") as cm:
                     tracing.configure_tracing()
         # Enabled either way - the Agent might start after the companion

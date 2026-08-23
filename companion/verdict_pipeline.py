@@ -125,6 +125,12 @@ def run_verdict_pipeline(
 
     with _traced_stage("vector_search"):
         matches = corpus.query_similar(conn, embedding, k)
+        # Exclude the video's own corpus row. A video already in the corpus
+        # - e.g. re-checked via the reload button (issue #47), which
+        # deliberately bypasses the normal already-watched dedupe - would
+        # otherwise match itself with near-zero distance, surfacing as a
+        # "very similar" match (or comparison target) against itself.
+        matches = [match for match in matches if match.video_id != video_id]
 
     new_video = verdict.NewVideo(
         title=fetched["title"] or "",

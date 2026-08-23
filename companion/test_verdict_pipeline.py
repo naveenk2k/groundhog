@@ -252,6 +252,43 @@ class VerdictPipelineTest(unittest.TestCase):
             span_names, ["transcript_fetch", "embed", "vector_search", "gemini_call"]
         )
 
+    @patch("companion.verdict_pipeline.verdict.get_verdict")
+    @patch("companion.verdict_pipeline.fetch_transcript")
+    def test_run_verdict_pipeline_excludes_own_video_from_matches(self, mock_fetch, mock_get_verdict):
+        # Simulate a video that's already in the corpus (e.g. from a prior
+        # watch) being re-checked - the issue #47 reload/re-check button
+        # deliberately re-fires /verdict for an already-watched video. Its
+        # own corpus row must not come back as one of its "similar" matches.
+        transcript_text = "a transcript about bread baking"
+        corpus.insert_video(
+            self.conn,
+            video_id="vid123",
+            title="Bread Baking",
+            creator="Bread Channel",
+            watched_at=corpus.now_watched_at(),
+            transcript_text=transcript_text,
+            published_at="",
+        )
+        mock_fetch.return_value = {
+            "transcript": transcript_text,
+            "title": "Bread Baking",
+            "creator": "Bread Channel",
+            "reason": None,
+        }
+        mock_get_verdict.return_value = {
+            "novelty": 7,
+            "execution": 8,
+            "depth": 6,
+            "explanation": "explanation",
+            "recommendation": "watch it",
+        }
+
+        verdict_pipeline.run_verdict_pipeline(self.conn, "vid123", k=3)
+
+        args, _ = mock_get_verdict.call_args
+        matches = args[1]
+        self.assertFalse(any(match.video_id == "vid123" for match in matches))
+
     @patch("companion.verdict_pipeline.fetch_transcript")
     def test_add_watched_video_emits_a_span_per_stage(self, mock_fetch):
         mock_fetch.return_value = {

@@ -423,14 +423,14 @@ if (typeof module !== "undefined" && module.exports) {
     .ghog-icon-btn {
       all: unset;
       cursor: pointer;
-      width: 20px;
-      height: 20px;
+      width: 26px;
+      height: 26px;
       display: flex;
       align-items: center;
       justify-content: center;
       border-radius: 999px;
       color: var(--ghog-fg-secondary);
-      font-size: 13px;
+      font-size: 16px;
       line-height: 1;
     }
     .ghog-icon-btn:hover {

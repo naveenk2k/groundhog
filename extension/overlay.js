@@ -571,9 +571,7 @@ if (typeof module !== "undefined" && module.exports) {
       color: var(--ghog-fg-secondary);
       line-height: 1.4;
       margin-bottom: 8px;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
+      overflow-wrap: break-word;
     }
 
     /* Recommendation is the single most prominent line in the panel - the

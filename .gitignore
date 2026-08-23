@@ -24,3 +24,7 @@ __pycache__/
 
 # Claude Code local state (worktrees, local permission settings)
 .claude/
+
+# Brainstorming visual-companion scratch (mockup sessions) - not docs/superpowers/,
+# which holds committed specs/plans
+/.superpowers/

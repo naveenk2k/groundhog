@@ -219,6 +219,18 @@ icon (or `chrome://extensions` → Groundhog → Options) - has:
   Useful if a video ever gets stuck on "Checking..." or "Marking as
   watched...".
 
+## Performance tracing (optional)
+
+Set `GROUNDHOG_TRACING_ENABLED=1` (in `.env`, picked up by `install.sh` the
+same way `GEMINI_API_KEY` is) to send per-stage timing for each `/verdict`
+request - transcript fetch, embedding, vector search, the Gemini call - to
+a local [Datadog Agent](https://docs.datadoghq.com/agent/) as APM traces.
+Off by default; nothing changes in the request path if you don't set it.
+Requires the Agent installed and running locally (`brew install --cask
+datadog-agent`) with a valid API key in its own `datadog.yaml` - see
+`DECISIONS.md` for the full setup and a gotcha around Datadog's
+site/region config.
+
 ## Running tests
 
 Companion (Python, `unittest`):

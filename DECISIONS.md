@@ -337,3 +337,34 @@ changed. Both the new signal (publish date) and the new instruction were
 added together since the date alone doesn't help if the model isn't told
 what to do with it, and the instruction alone has less to check against
 without the date.
+
+## Datadog APM tracing for the verdict pipeline
+
+**Decision:** opt-in tracing (`GROUNDHOG_TRACING_ENABLED`, off by default)
+sends per-stage spans - `transcript_fetch`, `embed`, `vector_search`,
+`gemini_call` - to a local Datadog Agent via `ddtrace`, instead of the
+one-off manual `time.monotonic()` logging originally used to diagnose slow
+verdicts. Chosen over self-hosting Prometheus+Grafana (extra local
+processes for a single-user tool) and over Google Cloud Monitoring
+(metrics only, no per-request waterfall view) - Datadog APM's trace
+waterfall answers "which stage of this one request took the time"
+directly, and is free for two years via the GitHub Student Developer Pack.
+See `docs/superpowers/specs/2026-08-23-datadog-tracing-design.md` for the
+full design.
+
+**Why:** investigating a slow verdict once required temporary instrumentation
+by hand each time. This makes the same breakdown permanent and queryable,
+without adding cost or infrastructure for users who don't want it - the
+companion's request path is unchanged when the flag is off.
+
+**Gotcha caught while setting this up:** the Datadog Agent validates its API
+key against a specific site/region (`datadoghq.com`, `datadoghq.eu`,
+`us3`/`us5`/`ap1`.datadoghq.com, etc.), defaulting to `datadoghq.com` if
+`datadog.yaml`'s `site` field is left unset. A key issued for a
+non-default-site org (this one was on `us5`) gets silently rejected with
+"API Key invalid" against the wrong site's validation endpoint - the Agent
+still runs and still receives spans locally (`agent status` even shows
+"Traces received"), so nothing looks obviously broken until you notice zero
+services ever show up in the Datadog UI. Check the domain in your
+browser's address bar while logged into Datadog, and set `site:` in
+`datadog.yaml` to match if it isn't `app.datadoghq.com`.

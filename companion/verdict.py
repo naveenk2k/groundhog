@@ -59,6 +59,19 @@ DEFAULT_TIMEOUT_SECONDS = float(os.environ.get("GROUNDHOG_GEMINI_TIMEOUT_SECONDS
 # of the generic "couldn't reach the verdict service" bucket.
 _TRANSIENT_GEMINI_CODES = {429, 503}
 
+# See docs/superpowers/specs/2026-08-23-similar-videos-overlay-design.md for
+# how this was picked: checked against real corpus data rather than assumed
+# - genuinely recurring/same-story video pairs (same match series on
+# different days, same news story covered a day apart) clustered at
+# 0.69-0.75 distance, while merely-related videos started around 0.85+.
+# Set a little above that cluster to avoid missing genuine matches right at
+# the edge.
+SIMILAR_VIDEO_DISTANCE_THRESHOLD = 0.78
+
+# Keeps the overlay's "Very similar to" section compact even when more than
+# 3 corpus matches clear the threshold.
+_MAX_SIMILAR_VIDEOS = 3
+
 # A select subset of an OpenAPI 3.0 schema object - what Gemini's
 # response_schema accepts. No `additionalProperties` (not part of that
 # subset); `required` + per-field `minimum`/`maximum` are enough to
@@ -176,6 +189,16 @@ your own honest judgment, grounded in specifics from the transcripts, not \
 a generic summary."""
 
 
+class SimilarVideo(TypedDict):
+    """One corpus match close enough to show as a clickable card in the
+    overlay - see SIMILAR_VIDEO_DISTANCE_THRESHOLD above."""
+
+    video_id: str
+    title: str
+    creator: str
+    watched_at: str
+
+
 class Verdict(TypedDict):
     novelty: int
     execution: int
@@ -188,6 +211,7 @@ class Verdict(TypedDict):
     # is for (issue #47), but they're not part of the judgment itself.
     title: str
     creator: str
+    similar_videos: list[SimilarVideo]
 
 
 class VerdictErrorResult(TypedDict):
@@ -296,6 +320,26 @@ def _build_user_message(new_video: NewVideo, matches: list[CorpusMatch]) -> str:
     return "\n".join(parts)
 
 
+def _similar_videos(matches: list[CorpusMatch]) -> list[SimilarVideo]:
+    """Corpus matches close enough to show as clickable cards in the
+    overlay, closest first, capped at _MAX_SIMILAR_VIDEOS.
+
+    Independent of Gemini's novelty/execution/depth judgment - this is
+    computed directly from the vector distance, before the Gemini call
+    happens, not from anything the model returns.
+    """
+    qualifying = [m for m in matches if m.distance <= SIMILAR_VIDEO_DISTANCE_THRESHOLD]
+    return [
+        {
+            "video_id": m.video_id,
+            "title": m.title,
+            "creator": m.creator,
+            "watched_at": m.watched_at,
+        }
+        for m in qualifying[:_MAX_SIMILAR_VIDEOS]
+    ]
+
+
 def get_verdict(
     new_video: NewVideo,
     matches: list[CorpusMatch],
@@ -370,4 +414,5 @@ def get_verdict(
         "recommendation": data["recommendation"],
         "title": new_video.title,
         "creator": new_video.creator,
+        "similar_videos": _similar_videos(matches),
     }

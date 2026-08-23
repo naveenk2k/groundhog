@@ -15,6 +15,7 @@ from google.genai import errors
 import httpx
 
 from companion import verdict
+from companion.corpus import CorpusMatch
 
 NEW_VIDEO = verdict.NewVideo(title="New Video", creator="Some Channel", transcript="a transcript")
 
@@ -132,6 +133,114 @@ class GetVerdictTest(unittest.TestCase):
                 "code": "unexpected_verdict_response",
             },
         )
+
+    def test_similar_videos_only_includes_matches_within_threshold(self):
+        response = MagicMock()
+        response.parsed = {
+            "novelty": 7,
+            "execution": 8,
+            "depth": 6,
+            "explanation": "explanation",
+            "recommendation": "watch it",
+        }
+        client = _fake_client(generate_content_result=response)
+        matches = [
+            CorpusMatch(
+                video_id="close1",
+                title="Close Match",
+                creator="Creator A",
+                published_at="",
+                watched_at="2026-01-01T00:00:00Z",
+                transcript_text="t",
+                distance=0.71,
+            ),
+            CorpusMatch(
+                video_id="far1",
+                title="Loosely Related",
+                creator="Creator B",
+                published_at="",
+                watched_at="2026-01-02T00:00:00Z",
+                transcript_text="t",
+                distance=0.91,
+            ),
+        ]
+
+        result = verdict.get_verdict(NEW_VIDEO, matches, client=client)
+
+        self.assertEqual(
+            result["similar_videos"],
+            [{"video_id": "close1", "title": "Close Match", "creator": "Creator A", "watched_at": "2026-01-01T00:00:00Z"}],
+        )
+
+    def test_similar_videos_caps_at_three_closest_first(self):
+        response = MagicMock()
+        response.parsed = {
+            "novelty": 7,
+            "execution": 8,
+            "depth": 6,
+            "explanation": "explanation",
+            "recommendation": "watch it",
+        }
+        client = _fake_client(generate_content_result=response)
+        # Five qualifying matches, already closest-first (matching query_similar's
+        # own ORDER BY vv.distance) - only the first three should come back.
+        matches = [
+            CorpusMatch(
+                video_id=f"v{i}",
+                title=f"Match {i}",
+                creator="Creator",
+                published_at="",
+                watched_at="2026-01-01T00:00:00Z",
+                transcript_text="t",
+                distance=0.70 + i * 0.01,
+            )
+            for i in range(5)
+        ]
+
+        result = verdict.get_verdict(NEW_VIDEO, matches, client=client)
+
+        self.assertEqual([m["video_id"] for m in result["similar_videos"]], ["v0", "v1", "v2"])
+
+    def test_similar_videos_empty_when_none_qualify(self):
+        response = MagicMock()
+        response.parsed = {
+            "novelty": 7,
+            "execution": 8,
+            "depth": 6,
+            "explanation": "explanation",
+            "recommendation": "watch it",
+        }
+        client = _fake_client(generate_content_result=response)
+        matches = [
+            CorpusMatch(
+                video_id="far1",
+                title="Loosely Related",
+                creator="Creator",
+                published_at="",
+                watched_at="2026-01-01T00:00:00Z",
+                transcript_text="t",
+                distance=0.95,
+            ),
+        ]
+
+        result = verdict.get_verdict(NEW_VIDEO, matches, client=client)
+
+        self.assertEqual(result["similar_videos"], [])
+
+    def test_similar_videos_empty_when_no_matches_at_all(self):
+        response = MagicMock()
+        response.parsed = {
+            "novelty": 7,
+            "execution": 8,
+            "depth": 6,
+            "explanation": "explanation",
+            "recommendation": "watch it",
+        }
+        client = _fake_client(generate_content_result=response)
+
+        result = verdict.get_verdict(NEW_VIDEO, [], client=client)
+
+        self.assertEqual(result["similar_videos"], [])
 
 
 if __name__ == "__main__":

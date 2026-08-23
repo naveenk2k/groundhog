@@ -39,6 +39,7 @@ def configure_tracing() -> None:
 
     import ddtrace
 
+    ddtrace.config.service = "groundhog-companion"
     ddtrace.patch_all()
 
     agent_host = os.environ.get("DD_AGENT_HOST", "localhost")

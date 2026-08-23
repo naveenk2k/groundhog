@@ -15,6 +15,7 @@ import time
 from typing import Optional, TypedDict
 
 import apsw
+from ddtrace.constants import _SPAN_MEASURED_KEY
 from ddtrace.trace import tracer
 
 from companion import corpus, verdict
@@ -60,6 +61,18 @@ _TRANSCRIPT_CACHE_MAX_ENTRIES = 50
 _transcript_cache: dict[str, tuple[float, TranscriptResult]] = {}
 
 
+def _traced_stage(name: str):
+    """tracer.trace(name), marked "measured" so Datadog computes latency/
+    error/hit metrics for this span. Datadog only auto-generates those
+    metrics for top-level spans by default - the fastapi.request root gets
+    them for free, but these pipeline-stage spans are nested underneath it
+    and were invisible to metric queries (e.g. a dashboard) until tagged
+    explicitly."""
+    span = tracer.trace(name)
+    span.set_tag(_SPAN_MEASURED_KEY, 1)
+    return span
+
+
 def _cached_fetch_transcript(video_id: str) -> TranscriptResult:
     """Fetch `video_id`'s transcript, reusing a recent result if one exists.
 
@@ -101,16 +114,16 @@ def run_verdict_pipeline(
     """
     logger.info("verdict requested for video %s", video_id)
 
-    with tracer.trace("transcript_fetch"):
+    with _traced_stage("transcript_fetch"):
         fetched = _cached_fetch_transcript(video_id)
     if fetched["transcript"] is None:
         logger.error("no transcript for video %s: %s", video_id, fetched["reason"])
         return {"error": "No transcript available for this video.", "code": "no_transcript"}
 
-    with tracer.trace("embed"):
+    with _traced_stage("embed"):
         embedding = corpus.embed_text(fetched["transcript"])
 
-    with tracer.trace("vector_search"):
+    with _traced_stage("vector_search"):
         matches = corpus.query_similar(conn, embedding, k)
 
     new_video = verdict.NewVideo(
@@ -121,7 +134,7 @@ def run_verdict_pipeline(
     )
 
     verdict_kwargs = {"model": model} if model else {}
-    with tracer.trace("gemini_call"):
+    with _traced_stage("gemini_call"):
         result = verdict.get_verdict(new_video, matches, **verdict_kwargs)
 
     return result
@@ -140,12 +153,12 @@ def add_watched_video(conn: apsw.Connection, video_id: str) -> WatchedResult:
     again for the same video is naturally a no-op duplicate-wise.
     """
     logger.info("watched-video add requested for video %s", video_id)
-    with tracer.trace("transcript_fetch"):
+    with _traced_stage("transcript_fetch"):
         fetched = _cached_fetch_transcript(video_id)
     if fetched["transcript"] is None:
         return {"added": False, "video_id": video_id, "title": None, "reason": fetched["reason"]}
 
-    with tracer.trace("corpus_insert"):
+    with _traced_stage("corpus_insert"):
         corpus.insert_video(
             conn,
             video_id=video_id,

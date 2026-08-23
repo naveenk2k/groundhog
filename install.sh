@@ -135,6 +135,28 @@ resolve_gemini_api_key() {
 echo "==> Resolving Gemini API key"
 GEMINI_API_KEY_VALUE="$(resolve_gemini_api_key)"
 
+# Resolves whether Datadog APM tracing (companion/tracing.py) should be on,
+# for the same reason resolve_gemini_api_key exists: the launchd-spawned
+# companion only sees what's in the plist's EnvironmentVariables, not
+# whatever's in the installer's own shell. Unlike the Gemini key, this is
+# opt-in and has no interactive prompt - most installs have no Datadog
+# Agent at all, so silence (tracing stays off) is the right default. The
+# only job here is making sure a value someone already set (their own
+# shell env, or a previous install.sh run's .env) survives a re-run
+# instead of getting silently dropped when the plist is rewritten.
+resolve_tracing_enabled() {
+  if [[ -n "${GROUNDHOG_TRACING_ENABLED:-}" ]]; then
+    echo "$GROUNDHOG_TRACING_ENABLED"
+    return 0
+  fi
+
+  if [[ -f "$ENV_FILE" ]]; then
+    grep -m1 '^GROUNDHOG_TRACING_ENABLED=' "$ENV_FILE" 2>/dev/null | cut -d= -f2-
+  fi
+}
+
+GROUNDHOG_TRACING_ENABLED_VALUE="$(resolve_tracing_enabled)"
+
 echo "==> Setting up Python $PYTHON_VERSION venv at $VENV_DIR (via uv)"
 uv venv --python "$PYTHON_VERSION" "$VENV_DIR"
 uv pip install --python "$VENV_DIR/bin/python" -r "$REPO_ROOT/requirements.txt"
@@ -156,6 +178,9 @@ mkdir -p "$HOME/Library/LaunchAgents"
 ENV_PAIRS=""
 if [[ -n "$GEMINI_API_KEY_VALUE" ]]; then
   ENV_PAIRS="GEMINI_API_KEY=$GEMINI_API_KEY_VALUE"
+fi
+if [[ -n "$GROUNDHOG_TRACING_ENABLED_VALUE" ]]; then
+  ENV_PAIRS="${ENV_PAIRS:+$ENV_PAIRS$'\n'}GROUNDHOG_TRACING_ENABLED=$GROUNDHOG_TRACING_ENABLED_VALUE"
 fi
 write_launchd_plist "$PLIST_PATH" "$ENV_PAIRS"
 

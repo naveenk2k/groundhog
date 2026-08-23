@@ -28,3 +28,9 @@ sqlite-vec
 # doesn't exist there. apsw bundles its own SQLite build with extension
 # loading enabled and works the same on every platform.
 apsw
+
+# Datadog APM tracing (opt-in via GROUNDHOG_TRACING_ENABLED - see
+# companion/tracing.py and docs/superpowers/specs/2026-08-23-datadog-tracing-design.md).
+# Pinned since ddtrace's internal (non-public) writer APIs are used directly
+# in tests - see companion/test_verdict_pipeline.py.
+ddtrace==4.13.1

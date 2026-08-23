@@ -40,6 +40,12 @@ EMBEDDING_DIMENSIONS = 384
 # to trace the actual request/response bodies moving through the companion.
 DEBUG = os.environ.get("GROUNDHOG_DEBUG", "").strip().lower() in ("1", "true", "yes")
 
+# Off by default: emits Datadog APM spans for every /verdict and
+# /videos/watched request when a local Datadog Agent is running (see
+# companion/tracing.py). Same opt-in convention as DEBUG above. See
+# docs/superpowers/specs/2026-08-23-datadog-tracing-design.md.
+TRACING_ENABLED = os.environ.get("GROUNDHOG_TRACING_ENABLED", "").strip().lower() in ("1", "true", "yes")
+
 
 def read_secret() -> str:
     """Read the shared secret from disk.

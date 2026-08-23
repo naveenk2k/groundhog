@@ -17,7 +17,7 @@ from pydantic import BaseModel
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response
 
-from companion import config, corpus
+from companion import config, corpus, tracing
 from companion.auth import SecretAuthMiddleware
 from companion.transcript import fetch_transcript
 from companion.verdict_pipeline import add_watched_video, run_verdict_pipeline
@@ -49,6 +49,8 @@ logging.basicConfig(
     level=logging.DEBUG if config.DEBUG else logging.INFO,
     format="%(asctime)s %(levelname)s %(name)s: %(message)s\n",
 )
+
+tracing.configure_tracing()
 
 # basicConfig's level applies to every unconfigured logger, not just ours.
 # Quiet httpx's and google-genai's own per-request INFO noise, and (when

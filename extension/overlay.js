@@ -637,6 +637,53 @@ if (typeof module !== "undefined" && module.exports) {
       line-height: 1.4;
     }
 
+    /* "Very similar to" cards - one per qualifying corpus match (see
+     * companion/verdict.py's SIMILAR_VIDEO_DISTANCE_THRESHOLD). Same wide-
+     * thumbnail row style validated in the design mockup. */
+    .ghog-similar-label {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: var(--ghog-fg-secondary);
+      margin: 10px 0 6px;
+    }
+
+    .ghog-similar-row {
+      display: flex;
+      gap: 8px;
+      border: 1px solid var(--ghog-border);
+      border-radius: 8px;
+      padding: 6px;
+      margin-bottom: 6px;
+      text-decoration: none;
+      color: inherit;
+    }
+    .ghog-similar-row:last-child {
+      margin-bottom: 0;
+    }
+    .ghog-similar-row img {
+      width: 64px;
+      height: 36px;
+      object-fit: cover;
+      border-radius: 4px;
+      flex-shrink: 0;
+    }
+    .ghog-similar-meta {
+      min-width: 0;
+    }
+    .ghog-similar-title {
+      font-size: 12px;
+      font-weight: 600;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      color: var(--ghog-fg);
+    }
+    .ghog-similar-sub {
+      font-size: 11px;
+      color: var(--ghog-fg-secondary);
+    }
+
     .ghog-badge {
       pointer-events: auto;
       display: inline-flex;
@@ -1010,6 +1057,54 @@ if (typeof module !== "undefined" && module.exports) {
       explanation.className = "ghog-explanation";
       explanation.textContent = verdict.explanation;
       body.appendChild(explanation);
+    }
+
+    // similar_videos: corpus matches close enough to link to directly (see
+    // companion/verdict.py's SIMILAR_VIDEO_DISTANCE_THRESHOLD) - absent or
+    // empty on older cached responses or verdicts with no close match, in
+    // which case nothing renders here.
+    if (Array.isArray(verdict.similar_videos) && verdict.similar_videos.length > 0) {
+      const label = document.createElement("div");
+      label.className = "ghog-similar-label";
+      label.textContent = "Very similar to";
+      body.appendChild(label);
+
+      verdict.similar_videos.forEach((similar) => {
+        const row = document.createElement("a");
+        row.className = "ghog-similar-row";
+        row.href = "https://www.youtube.com/watch?v=" + encodeURIComponent(similar.video_id);
+        row.target = "_blank";
+        row.rel = "noopener noreferrer";
+
+        const thumb = document.createElement("img");
+        thumb.src = "https://i.ytimg.com/vi/" + encodeURIComponent(similar.video_id) + "/hqdefault.jpg";
+        thumb.alt = "";
+        row.appendChild(thumb);
+
+        const meta = document.createElement("div");
+        meta.className = "ghog-similar-meta";
+
+        const titleEl = document.createElement("div");
+        titleEl.className = "ghog-similar-title";
+        titleEl.textContent = similar.title || similar.video_id;
+        meta.appendChild(titleEl);
+
+        const sub = document.createElement("div");
+        sub.className = "ghog-similar-sub";
+        const parsedDate = similar.watched_at ? new Date(similar.watched_at) : null;
+        const dateText =
+          parsedDate && !isNaN(parsedDate)
+            ? parsedDate.toLocaleDateString(undefined, { month: "short", day: "numeric" })
+            : null;
+        sub.textContent =
+          similar.creator && dateText
+            ? similar.creator + " · " + dateText
+            : similar.creator || dateText || "";
+        meta.appendChild(sub);
+
+        row.appendChild(meta);
+        body.appendChild(row);
+      });
     }
   }
 

@@ -15,6 +15,7 @@ import time
 from typing import Optional, TypedDict
 
 import apsw
+from ddtrace.trace import tracer
 
 from companion import corpus, verdict
 from companion.transcript import TranscriptResult, fetch_transcript
@@ -99,13 +100,18 @@ def run_verdict_pipeline(
     the LLM call itself never raises.
     """
     logger.info("verdict requested for video %s", video_id)
-    fetched = _cached_fetch_transcript(video_id)
+
+    with tracer.trace("transcript_fetch"):
+        fetched = _cached_fetch_transcript(video_id)
     if fetched["transcript"] is None:
         logger.error("no transcript for video %s: %s", video_id, fetched["reason"])
         return {"error": "No transcript available for this video.", "code": "no_transcript"}
 
-    embedding = corpus.embed_text(fetched["transcript"])
-    matches = corpus.query_similar(conn, embedding, k)
+    with tracer.trace("embed"):
+        embedding = corpus.embed_text(fetched["transcript"])
+
+    with tracer.trace("vector_search"):
+        matches = corpus.query_similar(conn, embedding, k)
 
     new_video = verdict.NewVideo(
         title=fetched["title"] or "",
@@ -115,7 +121,10 @@ def run_verdict_pipeline(
     )
 
     verdict_kwargs = {"model": model} if model else {}
-    return verdict.get_verdict(new_video, matches, **verdict_kwargs)
+    with tracer.trace("gemini_call"):
+        result = verdict.get_verdict(new_video, matches, **verdict_kwargs)
+
+    return result
 
 
 def add_watched_video(conn: apsw.Connection, video_id: str) -> WatchedResult:
@@ -131,18 +140,20 @@ def add_watched_video(conn: apsw.Connection, video_id: str) -> WatchedResult:
     again for the same video is naturally a no-op duplicate-wise.
     """
     logger.info("watched-video add requested for video %s", video_id)
-    fetched = _cached_fetch_transcript(video_id)
+    with tracer.trace("transcript_fetch"):
+        fetched = _cached_fetch_transcript(video_id)
     if fetched["transcript"] is None:
         return {"added": False, "video_id": video_id, "title": None, "reason": fetched["reason"]}
 
-    corpus.insert_video(
-        conn,
-        video_id=video_id,
-        title=fetched["title"] or video_id,
-        creator=fetched["creator"] or "",
-        watched_at=corpus.now_watched_at(),
-        transcript_text=fetched["transcript"],
-        published_at=fetched.get("published_at") or "",
-    )
+    with tracer.trace("corpus_insert"):
+        corpus.insert_video(
+            conn,
+            video_id=video_id,
+            title=fetched["title"] or video_id,
+            creator=fetched["creator"] or "",
+            watched_at=corpus.now_watched_at(),
+            transcript_text=fetched["transcript"],
+            published_at=fetched.get("published_at") or "",
+        )
 
     return {"added": True, "video_id": video_id, "title": fetched["title"], "reason": None}

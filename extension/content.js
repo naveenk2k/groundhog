@@ -158,6 +158,19 @@ GroundhogOverlay.onRetryClick = (videoId) => {
   safeSendMessage({ type: "GROUNDHOG_VIDEO_OPENED", videoId });
 };
 
+// Lets the overlay's inline model picker (shown only on gemini_busy errors,
+// see overlay.js's isGeminiBusyError) switch the saved model preference and
+// immediately retry, instead of requiring a trip to the options page.
+// Writes to the same chrome.storage.local key (groundhogModel) options.js
+// already reads/writes, so this becomes the new saved default too, not a
+// one-off override, then reuses onRetryClick's existing retry path rather
+// than inventing a second one.
+GroundhogOverlay.onModelChangeClick = (videoId, model) => {
+  chrome.storage.local.set({ groundhogModel: model }, () => {
+    GroundhogOverlay.onRetryClick(videoId);
+  });
+};
+
 function handleNavigation() {
   // Checked proactively here (every SPA navigation), not only reactively
   // after a sendMessage call throws below - a reload/update can happen at

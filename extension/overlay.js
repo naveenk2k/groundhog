@@ -591,6 +591,20 @@ if (typeof module !== "undefined" && module.exports) {
       background: var(--ghog-track);
     }
 
+    .ghog-model-picker {
+      display: inline-block;
+      margin-top: 6px;
+      margin-left: 6px;
+      padding: 4px 8px;
+      font-size: 11px;
+      font-weight: 500;
+      color: var(--ghog-fg);
+      background: var(--ghog-bg);
+      border: 1px solid var(--ghog-border);
+      border-radius: 999px;
+      cursor: pointer;
+    }
+
     /* Video title/creator line - identifies which video the panel is about.
      * Kept visually secondary (same weight as .ghog-explanation) since the
      * recommendation, not the video's own name, is still the headline. */
@@ -1020,6 +1034,29 @@ if (typeof module !== "undefined" && module.exports) {
           }
         });
         text.appendChild(action);
+
+        // Model picker: only for gemini_busy (see isGeminiBusyError), the
+        // one error where switching models is a real fix, since each tier
+        // sits on its own free-tier quota. Picking one both saves it as the
+        // new default (content.js writes it to the same chrome.storage.local
+        // key options.js uses) and immediately retries.
+        if (isGeminiBusyError(state.data.message, state.data.code) && typeof MODEL_TIERS !== "undefined") {
+          const picker = document.createElement("select");
+          picker.className = "ghog-model-picker";
+          picker.title = "Switch model and retry";
+          MODEL_TIERS.forEach((tier) => {
+            const option = document.createElement("option");
+            option.value = tier;
+            option.textContent = tier;
+            picker.appendChild(option);
+          });
+          picker.addEventListener("change", () => {
+            if (typeof GroundhogOverlay.onModelChangeClick === "function" && currentVideoId) {
+              GroundhogOverlay.onModelChangeClick(currentVideoId, picker.value);
+            }
+          });
+          text.appendChild(picker);
+        }
       }
 
       wrap.appendChild(text);

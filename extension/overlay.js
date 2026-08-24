@@ -39,7 +39,7 @@ const _CODE_TO_REASON = {
   companion_unreachable: "Couldn't reach the Groundhog companion.",
   companion_rate_limited: "Groundhog is being rate-limited - try again shortly.",
   companion_error_status: "Groundhog companion returned an error.",
-  gemini_busy: "Gemini is busy right now - try again in a bit.",
+  gemini_busy: "Gemini's overloaded or rate-limited right now. Try again shortly, or switch models below.",
   verdict_service_unreachable: "Couldn't reach the verdict service.",
   unexpected_verdict_response: "Groundhog got an unexpected response from the verdict service.",
 };
@@ -138,7 +138,7 @@ function classifyOverlayError(raw, code) {
   // just fine and told us it's busy. Checked before the generic "gemini"
   // substring match below so it doesn't get swallowed by that bucket.
   if (msg.includes("is busy right now")) {
-    return "Gemini is busy right now - try again in a bit.";
+    return "Gemini's overloaded or rate-limited right now. Try again shortly, or switch models below.";
   }
 
   // companion/verdict.py: Gemini responded successfully but the response
@@ -228,6 +228,28 @@ function isSetupError(raw, code) {
 }
 
 /**
+ * True if this error is specifically Gemini being transiently busy or
+ * rate-limited (companion/verdict.py's gemini_busy code): the one error
+ * where switching to a different model tier is a real, available fix,
+ * since each model tier sits on its own free-tier quota. Same code-first,
+ * substring-fallback precedence as isSetupError/isRetryableError above.
+ */
+function isGeminiBusyError(raw, code) {
+  if (code === "gemini_busy") {
+    return true;
+  }
+  // If code is provided but not "gemini_busy", don't do substring matching
+  if (typeof code === "string") {
+    return false;
+  }
+  // Only do substring matching when code is missing/undefined
+  if (typeof raw !== "string") {
+    return false;
+  }
+  return raw.toLowerCase().includes("is busy right now");
+}
+
+/**
  * Error codes where a manual "Mark as watched" click can never succeed, so
  * the footer shouldn't offer it as if it might work:
  *
@@ -251,7 +273,7 @@ function cannotMarkWatched(code) {
 }
 
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = { classifyOverlayError, isSetupError, isRetryableError, cannotMarkWatched };
+  module.exports = { classifyOverlayError, isSetupError, isRetryableError, cannotMarkWatched, isGeminiBusyError };
 }
 
 (function () {

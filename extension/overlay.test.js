@@ -16,7 +16,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 
-const { classifyOverlayError, isSetupError, isRetryableError, cannotMarkWatched } = require("./overlay.js");
+const { classifyOverlayError, isSetupError, isRetryableError, cannotMarkWatched, isGeminiBusyError } = require("./overlay.js");
 
 test("a recognized code wins over substring matching, even with mismatched/garbage message text", () => {
   // Deliberately mismatched raw message per code, to prove code (not the
@@ -26,7 +26,7 @@ test("a recognized code wins over substring matching, even with mismatched/garba
     "No transcript available for this video."
   );
   assert.equal(classifyOverlayError("", "timeout"), "Groundhog took too long to respond.");
-  assert.equal(classifyOverlayError("gemini mentioned here", "gemini_busy"), "Gemini is busy right now - try again in a bit.");
+  assert.equal(classifyOverlayError("gemini mentioned here", "gemini_busy"), "Gemini's overloaded or rate-limited right now. Try again shortly, or switch models below.");
   assert.equal(
     classifyOverlayError("irrelevant", "unexpected_verdict_response"),
     "Groundhog got an unexpected response from the verdict service."
@@ -105,8 +105,22 @@ test("companion responded with status 429 maps to a distinct rate-limited reason
 test("Gemini's own transient overload/rate-limit signal maps to a distinct busy reason", () => {
   assert.equal(
     classifyOverlayError("Gemini is busy right now - try again in a bit."),
-    "Gemini is busy right now - try again in a bit."
+    "Gemini's overloaded or rate-limited right now. Try again shortly, or switch models below."
   );
+});
+
+test("isGeminiBusyError: true for the gemini_busy code, regardless of message text", () => {
+  assert.equal(isGeminiBusyError("this text matches nothing recognizable", "gemini_busy"), true);
+});
+
+test("isGeminiBusyError: false for every other known code", () => {
+  assert.equal(isGeminiBusyError("Gemini is busy right now - try again in a bit.", "no_transcript"), false);
+  assert.equal(isGeminiBusyError("companion request timed out after 60s", "timeout"), false);
+});
+
+test("isGeminiBusyError: falls back to substring matching when code is missing", () => {
+  assert.equal(isGeminiBusyError("Gemini is busy right now - try again in a bit."), true);
+  assert.equal(isGeminiBusyError("companion request timed out after 60s"), false);
 });
 
 test("unparseable Gemini response maps to a distinct reason from generic unreachability", () => {

@@ -10,6 +10,7 @@
  *     phase: "checking" | "verdict" | "error" | "stale" | "watched",
  *     data: null | <verdict object from /verdict, includes title/creator> | <{ message, code } for phase "error"> | <{ title, creator, watched_at } for phase "watched">,
  *     collapsed: boolean,   // true = shown as a small corner badge only
+ *     collapsedByFullscreen: boolean,  // true if `collapsed` was set by entering fullscreen (not a manual click; see setFullscreenState)
  *     dismissed: boolean,   // true = fully hidden until the next navigation
  *     watchNote: null | { kind: "success" | "failure", message: string },
  *     alreadyWatched: boolean,  // true once this video is known to be in the corpus - see markAlreadyWatched/setAlreadyWatchedFlag
@@ -47,7 +48,15 @@
  * companion has responded.
  */
 function createOverlayState() {
-  return { phase: "checking", data: null, collapsed: false, dismissed: false, watchNote: null, alreadyWatched: false };
+  return {
+    phase: "checking",
+    data: null,
+    collapsed: false,
+    collapsedByFullscreen: false,
+    dismissed: false,
+    watchNote: null,
+    alreadyWatched: false,
+  };
 }
 
 /**
@@ -146,6 +155,31 @@ function toggleCollapsed(state) {
 }
 
 /**
+ * Reacts to the browser's real Fullscreen API changing state (see
+ * content.js's fullscreenchange listener). Entering fullscreen collapses an
+ * expanded, non-dismissed overlay and records that fullscreen did it.
+ * Exiting fullscreen only expands it back if collapsedByFullscreen is true:
+ * a manual collapse (via toggleCollapsed, before or during fullscreen)
+ * always wins and is never overridden here. A dismissed overlay is left
+ * alone entirely, same as every other transition in this file.
+ */
+function setFullscreenState(state, isFullscreen) {
+  if (state.dismissed) {
+    return state;
+  }
+  if (isFullscreen) {
+    if (state.collapsed) {
+      return state;
+    }
+    return { ...state, collapsed: true, collapsedByFullscreen: true };
+  }
+  if (state.collapsedByFullscreen) {
+    return { ...state, collapsed: false, collapsedByFullscreen: false };
+  }
+  return state;
+}
+
+/**
  * Fully hide the overlay for the current video. Previously reversible only
  * by the next navigation's fresh createOverlayState() (a full page reload or
  * navigating to a different video and back) - see undismissOverlay below
@@ -178,6 +212,7 @@ if (typeof module !== "undefined" && module.exports) {
     setWatchNote,
     clearWatchNote,
     toggleCollapsed,
+    setFullscreenState,
     dismissOverlay,
     undismissOverlay,
   };

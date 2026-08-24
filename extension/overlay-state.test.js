@@ -20,6 +20,7 @@ const {
   setWatchNote,
   clearWatchNote,
   toggleCollapsed,
+  setFullscreenState,
   dismissOverlay,
   undismissOverlay,
 } = require("./overlay-state.js");
@@ -29,6 +30,7 @@ test("createOverlayState starts checking, not collapsed, not dismissed, no watch
     phase: "checking",
     data: null,
     collapsed: false,
+    collapsedByFullscreen: false,
     dismissed: false,
     watchNote: null,
     alreadyWatched: false,
@@ -160,4 +162,44 @@ test("clearWatchNote resets watchNote to null without touching anything else", (
   const next = clearWatchNote(state);
   assert.equal(next.watchNote, null);
   assert.equal(next.phase, state.phase);
+});
+
+test("setFullscreenState collapses an expanded, non-dismissed overlay on entering fullscreen", () => {
+  const state = createOverlayState();
+  const next = setFullscreenState(state, true);
+  assert.equal(next.collapsed, true);
+  assert.equal(next.collapsedByFullscreen, true);
+});
+
+test("setFullscreenState does not touch an already-collapsed overlay on entering fullscreen", () => {
+  let state = createOverlayState();
+  state = toggleCollapsed(state); // manual collapse
+  const next = setFullscreenState(state, true);
+  assert.equal(next.collapsed, true);
+  assert.equal(next.collapsedByFullscreen, false);
+});
+
+test("setFullscreenState does not touch a dismissed overlay on entering fullscreen", () => {
+  let state = createOverlayState();
+  state = dismissOverlay(state);
+  const next = setFullscreenState(state, true);
+  assert.equal(next.collapsed, false);
+  assert.equal(next.collapsedByFullscreen, false);
+  assert.equal(next.dismissed, true);
+});
+
+test("setFullscreenState expands a fullscreen-caused collapse back on exiting fullscreen", () => {
+  let state = createOverlayState();
+  state = setFullscreenState(state, true);
+  const next = setFullscreenState(state, false);
+  assert.equal(next.collapsed, false);
+  assert.equal(next.collapsedByFullscreen, false);
+});
+
+test("setFullscreenState leaves a manual collapse alone on exiting fullscreen", () => {
+  let state = createOverlayState();
+  state = toggleCollapsed(state); // manual collapse, before ever going fullscreen
+  state = setFullscreenState(state, true); // entering fullscreen: no-op, already collapsed
+  const next = setFullscreenState(state, false); // exiting: must stay collapsed
+  assert.equal(next.collapsed, true);
 });

@@ -149,9 +149,18 @@ function clearWatchNote(state) {
   return { ...state, watchNote: null };
 }
 
-/** Flip collapsed <-> expanded. Does not affect dismissed or phase/data. */
+/**
+ * Flip collapsed <-> expanded. Does not affect dismissed or phase/data, but
+ * always clears collapsedByFullscreen: a manual toggle in either direction
+ * means the collapse state is now a deliberate user choice, not something
+ * fullscreen did, so a later fullscreen exit must not override it (see
+ * setFullscreenState). Without this, entering fullscreen (auto-collapse),
+ * expanding manually, then collapsing manually again would still leave
+ * collapsedByFullscreen set from the original auto-collapse, and exiting
+ * fullscreen would wrongly force it back open.
+ */
 function toggleCollapsed(state) {
-  return { ...state, collapsed: !state.collapsed };
+  return { ...state, collapsed: !state.collapsed, collapsedByFullscreen: false };
 }
 
 /**

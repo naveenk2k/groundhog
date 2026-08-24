@@ -329,6 +329,15 @@ document.addEventListener("timeupdate", handleTimeUpdate, true);
 // Safari-prefixed one are listened for, since this project explicitly
 // supports Safari.
 function handleFullscreenChange() {
+  // handleNavigation nulls out lastPostedVideoId and tears down the overlay
+  // when there's no video on the page. Without this guard, a fullscreen
+  // event anywhere else on the page (a Shorts preview, a home-feed video)
+  // after navigating away from a real video would still call
+  // GroundhogOverlay.setFullscreen, which resurrects the torn-down overlay
+  // via render()/ensureDom() with no real video behind it.
+  if (!lastPostedVideoId) {
+    return;
+  }
   const isFullscreen = Boolean(document.fullscreenElement || document.webkitFullscreenElement);
   if (typeof GroundhogOverlay.setFullscreen === "function") {
     GroundhogOverlay.setFullscreen(isFullscreen);

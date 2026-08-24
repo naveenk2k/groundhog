@@ -203,3 +203,16 @@ test("setFullscreenState leaves a manual collapse alone on exiting fullscreen", 
   const next = setFullscreenState(state, false); // exiting: must stay collapsed
   assert.equal(next.collapsed, true);
 });
+
+test("a manual re-collapse after a fullscreen-caused collapse stays collapsed on exiting fullscreen", () => {
+  let state = createOverlayState();
+  state = setFullscreenState(state, true); // auto-collapse on entering fullscreen
+  assert.equal(state.collapsed, true);
+  assert.equal(state.collapsedByFullscreen, true);
+  state = toggleCollapsed(state); // manual expand via the pill, still fullscreen
+  assert.equal(state.collapsed, false);
+  state = toggleCollapsed(state); // manual re-collapse via the pill, still fullscreen
+  assert.equal(state.collapsed, true);
+  const next = setFullscreenState(state, false); // exiting fullscreen
+  assert.equal(next.collapsed, true, "the second manual collapse must win over the earlier fullscreen auto-collapse");
+});

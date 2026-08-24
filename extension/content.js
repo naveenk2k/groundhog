@@ -321,3 +321,18 @@ function handleTimeUpdate(event) {
 
 document.addEventListener("yt-navigate-finish", handleNavigation);
 document.addEventListener("timeupdate", handleTimeUpdate, true);
+
+// Auto-collapses the overlay to a pill on real fullscreen (not YouTube's
+// separate theater mode, which never fires this) and expands it back on
+// exit, unless the user manually collapsed it (see overlay-state.js's
+// setFullscreenState for the exact rule). Both the unprefixed event and the
+// Safari-prefixed one are listened for, since this project explicitly
+// supports Safari.
+function handleFullscreenChange() {
+  const isFullscreen = Boolean(document.fullscreenElement || document.webkitFullscreenElement);
+  if (typeof GroundhogOverlay.setFullscreen === "function") {
+    GroundhogOverlay.setFullscreen(isFullscreen);
+  }
+}
+document.addEventListener("fullscreenchange", handleFullscreenChange);
+document.addEventListener("webkitfullscreenchange", handleFullscreenChange);

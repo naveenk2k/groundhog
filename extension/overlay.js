@@ -11,6 +11,7 @@
  *   GroundhogOverlay.reset(videoId)               - fresh "checking..." panel
  *   GroundhogOverlay.setResult(videoId, r)        - fill in verdict or error
  *   GroundhogOverlay.setWatchedResult(videoId, r) - corpus-add note (see below)
+ *   GroundhogOverlay.setFullscreen(isFullscreen)  - auto-collapse/expand on real browser fullscreen
  *
  * Design notes:
  * - Shadow DOM keeps all CSS below scoped to the overlay - nothing here can
@@ -1455,6 +1456,18 @@ if (typeof module !== "undefined" && module.exports) {
         render();
       }, WATCH_NOTE_TIMEOUT_MS);
       return wasWatchedPhase;
+    },
+    /**
+     * Called by content.js's fullscreenchange/webkitfullscreenchange
+     * listener whenever the browser's real Fullscreen API state changes
+     * (not YouTube's separate theater mode, which never fires that event).
+     * Auto-collapses the overlay to a pill on entering fullscreen and
+     * expands it back on exit, unless the user manually collapsed it first
+     * - see overlay-state.js's setFullscreenState for the exact rule.
+     */
+    setFullscreen(isFullscreen) {
+      state = setFullscreenState(state, isFullscreen);
+      render();
     },
     /**
      * Called from content.js's handleNavigation when a `yt-navigate-finish`

@@ -19,6 +19,7 @@ from companion.transcript import (
     _extract_creator,
     _extract_published_at,
     _media_ydl_opts,
+    _ydl_opts,
     _pick_subtitle_url,
     _try_local_transcription,
     _vtt_to_text,
@@ -89,6 +90,13 @@ class PickSubtitleUrlTest(unittest.TestCase):
 
 
 class AudioOptionsTest(unittest.TestCase):
+    def test_caption_options_bound_network_waits_and_disable_retries(self):
+        options = _ydl_opts()
+
+        self.assertEqual(options["socket_timeout"], config.YTDLP_SOCKET_TIMEOUT_SECONDS)
+        self.assertEqual(options["retries"], 0)
+        self.assertEqual(options["extractor_retries"], 0)
+
     def test_media_download_options_do_not_force_caption_client(self):
         options = _media_ydl_opts("/tmp/audio.%(ext)s")
 
@@ -96,6 +104,8 @@ class AudioOptionsTest(unittest.TestCase):
         self.assertEqual(options["outtmpl"], "/tmp/audio.%(ext)s")
         self.assertNotIn("extractor_args", options)
         self.assertNotIn("skip_download", options)
+        self.assertEqual(options["socket_timeout"], config.YTDLP_SOCKET_TIMEOUT_SECONDS)
+        self.assertEqual(options["retries"], 0)
 
     def test_local_transcription_uses_normal_media_download(self):
         with tempfile.TemporaryDirectory() as temp_dir:

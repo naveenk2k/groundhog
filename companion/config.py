@@ -57,6 +57,13 @@ WHISPER_MODEL = Path(
 WHISPER_THREADS = int(os.environ.get("GROUNDHOG_WHISPER_THREADS", "10"))
 WHISPER_TIMEOUT_SECONDS = float(os.environ.get("GROUNDHOG_WHISPER_TIMEOUT_SECONDS", "30"))
 
+# yt-dlp performs several network requests before it can expose a caption
+# track. Bound each socket operation and disable retries so a temporarily
+# stalled YouTube endpoint cannot keep the synchronous companion worker (and
+# the visible overlay) waiting indefinitely. The overlay separately enforces
+# the end-to-end 60-second user-facing deadline.
+YTDLP_SOCKET_TIMEOUT_SECONDS = float(os.environ.get("GROUNDHOG_YTDLP_SOCKET_TIMEOUT_SECONDS", "15"))
+
 
 def read_secret() -> str:
     """Read the shared secret from disk.

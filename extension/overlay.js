@@ -303,15 +303,30 @@ if (typeof module !== "undefined" && module.exports) {
   let shadowRoot = null;
   let els = null; // cached references into the shadow DOM, set up in ensureDom()
   let watchNoteTimer = null; // pending auto-fade for state.watchNote, see setWatchedResult
+  let watchAddTimer = null;
   let progressTimer = null;
   let progressStageStartedAt = 0;
   let progressTotalStartedAt = 0;
   let progressTimerStage = null;
 
+  // Kept in the visible document rather than relying solely on the MV3
+  // service worker's timer. A foreground overlay must always leave checking
+  // after this budget, even if the worker is suspended or a companion call
+  // ignores the browser-side abort.
+  const VERDICT_TIMEOUT_SECONDS = 60;
+
   // How long the corpus-add note (state.watchNote) stays visible before
   // auto-fading - long enough to read a short sentence, short enough not to
   // linger like a permanent status line.
   const WATCH_NOTE_TIMEOUT_MS = 4000;
+  const WATCH_ADD_TIMEOUT_MS = 60000;
+
+  function clearWatchAddTimer() {
+    if (watchAddTimer !== null) {
+      clearTimeout(watchAddTimer);
+      watchAddTimer = null;
+    }
+  }
 
   function stopProgressTimer() {
     if (progressTimer !== null) {
@@ -330,7 +345,7 @@ if (typeof module !== "undefined" && module.exports) {
       progressTimerStage = progress;
       progressStageStartedAt = now - stageElapsed * 1000;
     }
-    if (!progressTotalStartedAt || progress === "checking_captions") {
+    if (!progressTotalStartedAt) {
       progressTotalStartedAt = now - totalElapsed * 1000;
     }
     if (progressTimer === null) {
@@ -341,6 +356,12 @@ if (typeof module !== "undefined" && module.exports) {
         }
         const stageSeconds = Math.max(0, (performance.now() - progressStageStartedAt) / 1000);
         const totalSeconds = Math.max(0, (performance.now() - progressTotalStartedAt) / 1000);
+        if (totalSeconds >= VERDICT_TIMEOUT_SECONDS) {
+          state = applyTimeout(state);
+          stopProgressTimer();
+          render();
+          return;
+        }
         state = setProgress(state, state.progress, stageSeconds, totalSeconds);
         render();
       }, 1000);
@@ -588,6 +609,31 @@ if (typeof module !== "undefined" && module.exports) {
      * overlay-state.js's watchNote docs). */
     .ghog-footer {
       padding: 0 12px 10px;
+    }
+    .ghog-watch-progress {
+      margin: 0 0 9px;
+    }
+    .ghog-watch-progress-label {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 4px;
+      color: var(--ghog-fg-secondary);
+      font-size: 10.5px;
+      font-variant-numeric: tabular-nums;
+      opacity: 0.72;
+    }
+    .ghog-watch-progress-track {
+      height: 3px;
+      overflow: hidden;
+      border-radius: 999px;
+      background: var(--ghog-track);
+    }
+    .ghog-watch-progress-fill {
+      height: 100%;
+      border-radius: inherit;
+      background: var(--ghog-fg-secondary);
+      opacity: 0.7;
+      transition: width 180ms ease-out;
     }
     .ghog-mark-watched-btn {
       all: unset;
@@ -896,6 +942,20 @@ if (typeof module !== "undefined" && module.exports) {
     footer.className = "ghog-footer";
     panel.appendChild(footer);
 
+    const watchProgress = document.createElement("div");
+    watchProgress.className = "ghog-watch-progress";
+    watchProgress.hidden = true;
+    const watchProgressLabel = document.createElement("div");
+    watchProgressLabel.className = "ghog-watch-progress-label";
+    const watchProgressTrack = document.createElement("div");
+    watchProgressTrack.className = "ghog-watch-progress-track";
+    const watchProgressFill = document.createElement("div");
+    watchProgressFill.className = "ghog-watch-progress-fill";
+    watchProgressTrack.appendChild(watchProgressFill);
+    watchProgress.appendChild(watchProgressLabel);
+    watchProgress.appendChild(watchProgressTrack);
+    footer.appendChild(watchProgress);
+
     const markWatchedBtn = document.createElement("button");
     markWatchedBtn.className = "ghog-mark-watched-btn";
     markWatchedBtn.textContent = "Mark as watched";
@@ -929,12 +989,20 @@ if (typeof module !== "undefined" && module.exports) {
     });
     root.appendChild(badge);
 
-    els = { host, root, panel, body, footer, markWatchedBtn, watchNote, badge, reloadBtn };
+    els = {
+      host, root, panel, body, footer, markWatchedBtn, watchNote, badge, reloadBtn,
+      watchProgress, watchProgressLabel, watchProgressFill,
+    };
   }
 
   function formatElapsed(seconds) {
     const value = Number.isFinite(seconds) ? Math.max(0, seconds) : 0;
     return Math.floor(value) + "s";
+  }
+
+  function formatWatchTime(seconds) {
+    const rounded = Math.max(0, Math.floor(Number.isFinite(seconds) ? seconds : 0));
+    return Math.floor(rounded / 60) + ":" + String(rounded % 60).padStart(2, "0");
   }
 
   /** Build the body's inner content for the current state. Pure DOM construction, no side effects on `state`. */
@@ -1344,12 +1412,26 @@ if (typeof module !== "undefined" && module.exports) {
     // video that's actually in the corpus (alreadyWatched only flips true
     // on a real added/found result - see setAlreadyWatchedFlag/
     // markAlreadyWatched), never speculatively.
-    els.markWatchedBtn.disabled = unwatchable;
+    els.markWatchedBtn.disabled = unwatchable || state.watchAddPending;
     els.markWatchedBtn.textContent = state.alreadyWatched
       ? "Remove from watch history"
       : unwatchable
         ? "Can't add - no transcript"
+        : state.watchAddPending
+          ? "Adding to history…"
         : "Mark as watched";
+
+    const progress = state.watchProgress;
+    const showWatchProgress = Boolean(progress) && !state.alreadyWatched && !unwatchable;
+    els.watchProgress.hidden = !showWatchProgress;
+    if (showWatchProgress) {
+      const percent = Math.max(0, Math.min(100, progress.fraction * 100));
+      els.watchProgressLabel.textContent = state.watchAddPending
+        ? "Adding to history…"
+        : formatWatchTime(progress.currentSeconds) + " watched · adds at " +
+          formatWatchTime(progress.thresholdSeconds);
+      els.watchProgressFill.style.width = percent + "%";
+    }
 
     els.watchNote.classList.toggle("ghog-visible", Boolean(state.watchNote));
     if (state.watchNote) {
@@ -1430,11 +1512,12 @@ if (typeof module !== "undefined" && module.exports) {
         clearTimeout(watchNoteTimer);
         watchNoteTimer = null;
       }
+      clearWatchAddTimer();
       render();
     },
     /** Called when the background worker's /verdict response (or an error) comes back for `videoId`. Ignored if the user has since navigated to a different video (stale response). */
     setResult(videoId, result) {
-      if (videoId !== currentVideoId) {
+      if (videoId !== currentVideoId || state.phase !== "checking") {
         return;
       }
       state = applyVerdictResult(state, result);
@@ -1448,6 +1531,32 @@ if (typeof module !== "undefined" && module.exports) {
       }
       state = setProgress(state, progress, elapsedSeconds, totalElapsedSeconds);
       syncProgressTimer(progress, elapsedSeconds, totalElapsedSeconds);
+      render();
+    },
+    /** Update the visible progress toward automatic watch-history insertion. */
+    setWatchProgress(videoId, progress) {
+      if (videoId !== currentVideoId) {
+        return;
+      }
+      state = setWatchProgress(state, progress);
+      render();
+    },
+    /** Show that the threshold was crossed and wait for the companion's add result. */
+    setWatchAddPending(videoId) {
+      if (videoId !== currentVideoId || state.alreadyWatched || state.watchAddPending) {
+        return;
+      }
+      state = setWatchAddPending(state, true);
+      clearWatchAddTimer();
+      watchAddTimer = setTimeout(() => {
+        state = setWatchAddPending(state, false);
+        state = setWatchNote(state, {
+          kind: "failure",
+          message: "Adding this video to history took too long.",
+        });
+        watchAddTimer = null;
+        render();
+      }, WATCH_ADD_TIMEOUT_MS);
       render();
     },
     /**
@@ -1512,6 +1621,8 @@ if (typeof module !== "undefined" && module.exports) {
         clearTimeout(watchNoteTimer);
         watchNoteTimer = null;
       }
+      clearWatchAddTimer();
+      state = setWatchAddPending(state, false);
       state = setWatchNote(state, describeWatchedResult(result));
       if (result && result.added) {
         state = setAlreadyWatchedFlag(state);
@@ -1544,6 +1655,7 @@ if (typeof module !== "undefined" && module.exports) {
         clearTimeout(watchNoteTimer);
         watchNoteTimer = null;
       }
+      clearWatchAddTimer();
       state = setWatchNote(state, describeRemoveResult(result));
       if (result && result.removed) {
         state = clearAlreadyWatched(state);
@@ -1592,6 +1704,7 @@ if (typeof module !== "undefined" && module.exports) {
         clearTimeout(watchNoteTimer);
         watchNoteTimer = null;
       }
+      clearWatchAddTimer();
       if (els && els.host && els.host.parentNode) {
         els.host.parentNode.removeChild(els.host);
       }

@@ -16,6 +16,8 @@
  *     collapsedByFullscreen: boolean,  // true if `collapsed` was set by entering fullscreen (not a manual click; see setFullscreenState)
  *     dismissed: boolean,   // true = fully hidden until the next navigation
  *     watchNote: null | { kind: "success" | "failure", message: string },
+ *     watchProgress: null | { fraction: number, currentSeconds: number, thresholdSeconds: number },
+ *     watchAddPending: boolean,  // true while POST /videos/watched is in flight
  *     alreadyWatched: boolean,  // true once this video is known to be in the corpus - see markAlreadyWatched/setAlreadyWatchedFlag
  *   }
  *
@@ -61,6 +63,8 @@ function createOverlayState() {
     collapsedByFullscreen: false,
     dismissed: false,
     watchNote: null,
+    watchProgress: null,
+    watchAddPending: false,
     alreadyWatched: false,
   };
 }
@@ -96,6 +100,22 @@ function applyVerdictResult(state, result) {
     return { ...state, phase: "error", data: { message: result.error, code: result.code } };
   }
   return { ...state, phase: "verdict", data: result };
+}
+
+/**
+ * End a check whose client-visible deadline elapsed. This is intentionally a
+ * state transition rather than a rendering concern: late status polls and
+ * verdict responses must not resurrect a request the user has been told
+ * timed out.
+ */
+function applyTimeout(state) {
+  if (state.phase !== "checking") {
+    return state;
+  }
+  return applyVerdictResult(state, {
+    error: "Groundhog took too long to respond.",
+    code: "timeout",
+  });
 }
 
 /**
@@ -171,6 +191,16 @@ function clearWatchNote(state) {
   return { ...state, watchNote: null };
 }
 
+/** Update progress toward automatically adding the current video to history. */
+function setWatchProgress(state, progress) {
+  return { ...state, watchProgress: progress };
+}
+
+/** Track whether the automatic/manual history-add request is still pending. */
+function setWatchAddPending(state, pending) {
+  return { ...state, watchAddPending: Boolean(pending) };
+}
+
 /**
  * Flip collapsed <-> expanded. Does not affect dismissed or phase/data, but
  * always clears collapsedByFullscreen: a manual toggle in either direction
@@ -237,12 +267,15 @@ if (typeof module !== "undefined" && module.exports) {
     createOverlayState,
     setProgress,
     applyVerdictResult,
+    applyTimeout,
     markContextInvalidated,
     markAlreadyWatched,
     setAlreadyWatchedFlag,
     clearAlreadyWatched,
     setWatchNote,
     clearWatchNote,
+    setWatchProgress,
+    setWatchAddPending,
     toggleCollapsed,
     setFullscreenState,
     dismissOverlay,

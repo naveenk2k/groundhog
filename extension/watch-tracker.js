@@ -37,6 +37,21 @@ function computeWatchThresholdSeconds(duration) {
 }
 
 /**
+ * Return display-ready progress toward the automatic watch-history threshold.
+ * This deliberately uses the exact same threshold as WatchThresholdTracker,
+ * so the bar cannot disagree with the event that actually adds the video.
+ */
+function computeWatchProgress(currentTime, duration) {
+  const thresholdSeconds = computeWatchThresholdSeconds(duration);
+  const currentSeconds = Number.isFinite(currentTime) ? Math.max(0, currentTime) : 0;
+  return {
+    fraction: Math.min(1, currentSeconds / thresholdSeconds),
+    currentSeconds,
+    thresholdSeconds,
+  };
+}
+
+/**
  * Stateful (but DOM-free) tracker for the "has this video crossed the watch
  * threshold yet" question. One instance is meant to live for the lifetime of
  * the content script and be explicitly `reset()` on every SPA navigation to
@@ -90,5 +105,5 @@ class WatchThresholdTracker {
 }
 
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = { computeWatchThresholdSeconds, WatchThresholdTracker };
+  module.exports = { computeWatchThresholdSeconds, computeWatchProgress, WatchThresholdTracker };
 }

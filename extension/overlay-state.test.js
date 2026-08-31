@@ -14,12 +14,15 @@ const {
   createOverlayState,
   setProgress,
   applyVerdictResult,
+  applyTimeout,
   markContextInvalidated,
   markAlreadyWatched,
   setAlreadyWatchedFlag,
   clearAlreadyWatched,
   setWatchNote,
   clearWatchNote,
+  setWatchProgress,
+  setWatchAddPending,
   toggleCollapsed,
   setFullscreenState,
   dismissOverlay,
@@ -37,8 +40,25 @@ test("createOverlayState starts checking, not collapsed, not dismissed, no watch
     collapsedByFullscreen: false,
     dismissed: false,
     watchNote: null,
+    watchProgress: null,
+    watchAddPending: false,
     alreadyWatched: false,
   });
+});
+
+test("setWatchProgress tracks the threshold without changing the verdict phase", () => {
+  const state = createOverlayState();
+  const progress = { fraction: 0.5, currentSeconds: 150, thresholdSeconds: 300 };
+  const next = setWatchProgress(state, progress);
+  assert.equal(next.phase, "checking");
+  assert.equal(next.watchProgress, progress);
+});
+
+test("setWatchAddPending tracks an in-flight history add independently of the verdict", () => {
+  const next = setWatchAddPending(createOverlayState(), true);
+  assert.equal(next.phase, "checking");
+  assert.equal(next.watchAddPending, true);
+  assert.equal(setWatchAddPending(next, false).watchAddPending, false);
 });
 
 test("setProgress updates the visible checking stage", () => {
@@ -52,6 +72,20 @@ test("setProgress updates the visible checking stage", () => {
 test("setProgress ignores late polling after a terminal result", () => {
   const state = applyVerdictResult(createOverlayState(), { novelty: 7 });
   assert.equal(setProgress(state, "transcribing"), state);
+});
+
+test("applyTimeout turns an in-flight check into the retryable timeout state", () => {
+  const next = applyTimeout(createOverlayState());
+  assert.equal(next.phase, "error");
+  assert.deepEqual(next.data, {
+    message: "Groundhog took too long to respond.",
+    code: "timeout",
+  });
+});
+
+test("applyTimeout preserves an existing terminal result", () => {
+  const state = applyVerdictResult(createOverlayState(), { novelty: 5 });
+  assert.equal(applyTimeout(state), state);
 });
 
 test("applyVerdictResult with a verdict object moves to phase verdict, data is the verdict as-is", () => {

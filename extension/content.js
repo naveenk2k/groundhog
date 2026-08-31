@@ -137,6 +137,7 @@ GroundhogOverlay.onOpenSettingsClick = () => {
 // corpus.insert_video upsert-by-video_id behavior don't distinguish who
 // triggered the add, so both paths can safely share one handler.
 GroundhogOverlay.onMarkWatchedClick = (videoId) => {
+  GroundhogOverlay.setWatchAddPending(videoId);
   safeSendMessage({ type: "GROUNDHOG_VIDEO_WATCHED", videoId });
 };
 
@@ -318,12 +319,18 @@ function handleTimeUpdate(event) {
     return;
   }
 
+  GroundhogOverlay.setWatchProgress(
+    videoId,
+    computeWatchProgress(video.currentTime, video.duration),
+  );
+
   const crossedThreshold = watchTracker.checkProgress(
     videoId,
     video.currentTime,
     video.duration
   );
   if (crossedThreshold && videoId !== noTranscriptVideoId) {
+    GroundhogOverlay.setWatchAddPending(videoId);
     safeSendMessage({ type: "GROUNDHOG_VIDEO_WATCHED", videoId });
   }
 }

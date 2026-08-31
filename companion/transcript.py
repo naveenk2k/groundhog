@@ -78,6 +78,9 @@ def _ydl_opts() -> dict:
         "skip_download": True,
         "subtitleslangs": _SUBTITLE_LANGS,
         "subtitlesformat": "vtt",
+        "socket_timeout": config.YTDLP_SOCKET_TIMEOUT_SECONDS,
+        "retries": 0,
+        "extractor_retries": 0,
         # This is the load-bearing option: android_vr is currently exempt
         # from YouTube's PO-token requirement (see module docstring).
         "extractor_args": {"youtube": {"player_client": ["android_vr"]}},
@@ -99,6 +102,9 @@ def _media_ydl_opts(output_template: str) -> dict:
         "noplaylist": True,
         "format": "bestaudio/best",
         "outtmpl": output_template,
+        "socket_timeout": config.YTDLP_SOCKET_TIMEOUT_SECONDS,
+        "retries": 0,
+        "extractor_retries": 0,
     }
 
 

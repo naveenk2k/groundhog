@@ -20,6 +20,7 @@ from starlette.responses import Response
 from companion import config, corpus, tracing
 from companion.auth import SecretAuthMiddleware
 from companion.transcript import fetch_transcript
+from companion.transcript_status import get_status
 from companion.verdict_pipeline import add_watched_video, run_verdict_pipeline
 
 # This is the single entry point for the companion process (uvicorn imports
@@ -197,6 +198,12 @@ async def transcript(video_id: str) -> dict:
     return fetch_transcript(video_id)
 
 
+@app.get("/transcript/status/{video_id}")
+async def transcript_status(video_id: str) -> dict:
+    """Return the current short-lived progress stage for a video request."""
+    return get_status(video_id)
+
+
 class VerdictRequest(BaseModel):
     video_id: str
     # See DECISIONS.md "Claude call: prompt content and tunables" for why
@@ -208,12 +215,15 @@ class VerdictRequest(BaseModel):
 
 
 @app.post("/verdict")
-async def verdict_endpoint(body: VerdictRequest) -> dict:
+def verdict_endpoint(body: VerdictRequest) -> dict:
     """Judge whether a video says anything new, given the rest of the pipeline.
 
     Thin adapter over companion/verdict_pipeline.py's run_verdict_pipeline:
-    parse the request, run the pipeline, return its result. Always returns
-    200: a missing transcript, an empty corpus, or a failed/timed-out
+    parse the request, run the pipeline, return its result. This route is
+    deliberately synchronous: FastAPI dispatches it to a worker thread,
+    keeping the event loop available for /transcript/status polling while
+    yt-dlp, ffmpeg, Whisper, embeddings, and Gemini are running. Always
+    returns 200: a missing transcript, an empty corpus, or a failed/timed-out
     verdict call all come back as `{"error": "..."}` rather than a non-2xx
     status or a hang.
     """

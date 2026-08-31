@@ -6,6 +6,7 @@ one spot.
 """
 
 import os
+import shutil
 from pathlib import Path
 
 # Repo root: companion/ lives directly under it.
@@ -45,6 +46,16 @@ DEBUG = os.environ.get("GROUNDHOG_DEBUG", "").strip().lower() in ("1", "true", "
 # companion/tracing.py). Same opt-in convention as DEBUG above. See
 # docs/superpowers/specs/2026-08-23-datadog-tracing-design.md.
 TRACING_ENABLED = os.environ.get("GROUNDHOG_TRACING_ENABLED", "").strip().lower() in ("1", "true", "yes")
+
+# Optional local ASR fallback. The companion stays caption-only unless a
+# whisper.cpp model exists at this path; installing the binary alone should
+# not make a missing-model error appear in every verdict request.
+WHISPER_CLI = os.environ.get("GROUNDHOG_WHISPER_CLI", shutil.which("whisper-cli") or "whisper-cli")
+WHISPER_MODEL = Path(
+    os.environ.get("GROUNDHOG_WHISPER_MODEL", str(REPO_ROOT / ".models" / "ggml-base.en.bin"))
+)
+WHISPER_THREADS = int(os.environ.get("GROUNDHOG_WHISPER_THREADS", "10"))
+WHISPER_TIMEOUT_SECONDS = float(os.environ.get("GROUNDHOG_WHISPER_TIMEOUT_SECONDS", "30"))
 
 
 def read_secret() -> str:

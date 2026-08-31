@@ -24,10 +24,17 @@ third host). That's an accepted, load-bearing cost - see DECISIONS.md
 
 from __future__ import annotations
 
+import logging
 import re
+import tempfile
+from pathlib import Path
 from typing import TypedDict
 
 import yt_dlp
+
+from companion import config
+from companion.local_transcriber import transcribe_audio
+from companion.transcript_status import set_status
 
 # Prefer English captions; fall back to auto-generated English if no manual
 # ones exist. yt-dlp's `subtitleslangs` matches both `en` and regional
@@ -69,14 +76,61 @@ def _ydl_opts() -> dict:
         "no_warnings": True,
         "logger": _SilentLogger(),
         "skip_download": True,
-        "writesubtitles": True,
-        "writeautomaticsub": True,
         "subtitleslangs": _SUBTITLE_LANGS,
         "subtitlesformat": "vtt",
         # This is the load-bearing option: android_vr is currently exempt
         # from YouTube's PO-token requirement (see module docstring).
         "extractor_args": {"youtube": {"player_client": ["android_vr"]}},
     }
+
+
+def _media_ydl_opts(output_template: str) -> dict:
+    """Build options for media acquisition, independent of caption clients.
+
+    Caption discovery currently needs ``android_vr``. YouTube media URLs from
+    that client can return 403s, though, so audio acquisition deliberately
+    uses yt-dlp's normal client selection and lets yt-dlp perform the
+    download itself rather than replaying a URL from another extraction.
+    """
+    return {
+        "quiet": True,
+        "no_warnings": True,
+        "logger": _SilentLogger(),
+        "noplaylist": True,
+        "format": "bestaudio/best",
+        "outtmpl": output_template,
+    }
+
+
+def _try_local_transcription(video_id: str, info: dict) -> str | None:
+    """Download audio and run local ASR when the optional model is installed."""
+    if not config.WHISPER_MODEL.is_file():
+        return None
+
+    duration = float(info.get("duration") or 0)
+    try:
+        set_status(video_id, "downloading_audio")
+        with tempfile.TemporaryDirectory(prefix="groundhog-audio-") as temp_dir:
+            output_dir = Path(temp_dir)
+            output_template = str(output_dir / "audio.%(ext)s")
+            with yt_dlp.YoutubeDL(_media_ydl_opts(output_template)) as ydl:
+                media_info = ydl.extract_info(f"https://www.youtube.com/watch?v={video_id}", download=True)
+            duration = duration or float(media_info.get("duration") or 0)
+            downloaded = [path for path in output_dir.glob("audio.*") if path.is_file()]
+            if not downloaded:
+                raise RuntimeError("yt-dlp downloaded no audio file")
+            set_status(video_id, "transcribing")
+            return transcribe_audio(
+                downloaded[0],
+                duration_seconds=duration,
+                model_path=config.WHISPER_MODEL,
+                threads=config.WHISPER_THREADS,
+                timeout_seconds=config.WHISPER_TIMEOUT_SECONDS,
+                executable=config.WHISPER_CLI,
+            )
+    except Exception as e:  # noqa: BLE001 - ASR is an optional fallback
+        logging.getLogger(__name__).warning("local transcription failed for %s: %s", video_id, e)
+        return None
 
 
 def _pick_subtitle_url(info: dict) -> str | None:
@@ -173,10 +227,59 @@ def fetch_transcript(video_id: str) -> TranscriptResult:
     should never crash the caller.
     """
     url = f"https://www.youtube.com/watch?v={video_id}"
+    set_status(video_id, "checking_captions")
 
+    # The API already exposes caption URLs in the info dict. The
+    # writesubtitles/writeautomaticsub options are only needed when yt-dlp is
+    # asked to write files, so keep this path in-memory and reuse one
+    # YoutubeDL instance for metadata and caption content.
     try:
         with yt_dlp.YoutubeDL(_ydl_opts()) as ydl:
             info = ydl.extract_info(url, download=False)
+
+            if info is None:
+                return {
+                    "transcript": None,
+                    "reason": "video unavailable or private",
+                    "title": None,
+                    "creator": None,
+                    "published_at": None,
+                }
+
+            title = info.get("title")
+            creator = _extract_creator(info)
+            published_at = _extract_published_at(info)
+
+            subtitle_url = _pick_subtitle_url(info)
+            if subtitle_url is None:
+                local_transcript = _try_local_transcription(video_id, info)
+                if local_transcript:
+                    set_status(video_id, "complete")
+                    return {
+                        "transcript": local_transcript,
+                        "reason": None,
+                        "title": title,
+                        "creator": creator,
+                        "published_at": published_at,
+                    }
+                return {
+                    "transcript": None,
+                    "reason": "no English captions available",
+                    "title": title,
+                    "creator": creator,
+                    "published_at": published_at,
+                }
+
+            try:
+                vtt_text = ydl.urlopen(subtitle_url).read().decode("utf-8", errors="replace")
+            except Exception as e:  # noqa: BLE001
+                return {
+                    "transcript": None,
+                    "reason": f"failed to download caption content: {e}",
+                    "title": title,
+                    "creator": creator,
+                    "published_at": published_at,
+                }
     except yt_dlp.utils.DownloadError as e:
         return {
             "transcript": None,
@@ -194,41 +297,6 @@ def fetch_transcript(video_id: str) -> TranscriptResult:
             "published_at": None,
         }
 
-    if info is None:
-        return {
-            "transcript": None,
-            "reason": "video unavailable or private",
-            "title": None,
-            "creator": None,
-            "published_at": None,
-        }
-
-    title = info.get("title")
-    creator = _extract_creator(info)
-    published_at = _extract_published_at(info)
-
-    subtitle_url = _pick_subtitle_url(info)
-    if subtitle_url is None:
-        return {
-            "transcript": None,
-            "reason": "no English captions available",
-            "title": title,
-            "creator": creator,
-            "published_at": published_at,
-        }
-
-    try:
-        with yt_dlp.YoutubeDL(_ydl_opts()) as ydl:
-            vtt_text = ydl.urlopen(subtitle_url).read().decode("utf-8", errors="replace")
-    except Exception as e:  # noqa: BLE001
-        return {
-            "transcript": None,
-            "reason": f"failed to download caption content: {e}",
-            "title": title,
-            "creator": creator,
-            "published_at": published_at,
-        }
-
     transcript = _vtt_to_text(vtt_text)
     if not transcript:
         return {
@@ -239,6 +307,7 @@ def fetch_transcript(video_id: str) -> TranscriptResult:
             "published_at": published_at,
         }
 
+    set_status(video_id, "complete")
     return {
         "transcript": transcript,
         "reason": None,

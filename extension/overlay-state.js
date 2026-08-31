@@ -8,6 +8,9 @@
  * Shape of the state object:
  *   {
  *     phase: "checking" | "verdict" | "error" | "stale" | "watched",
+ *     progress: "checking_captions" | "downloading_audio" | "transcribing" | "evaluating" | "complete",
+ *     progressElapsedSeconds: number,
+ *     totalElapsedSeconds: number,
  *     data: null | <verdict object from /verdict, includes title/creator> | <{ message, code } for phase "error"> | <{ title, creator, watched_at } for phase "watched">,
  *     collapsed: boolean,   // true = shown as a small corner badge only
  *     collapsedByFullscreen: boolean,  // true if `collapsed` was set by entering fullscreen (not a manual click; see setFullscreenState)
@@ -50,12 +53,31 @@
 function createOverlayState() {
   return {
     phase: "checking",
+    progress: "checking_captions",
+    progressElapsedSeconds: 0,
+    totalElapsedSeconds: 0,
     data: null,
     collapsed: false,
     collapsedByFullscreen: false,
     dismissed: false,
     watchNote: null,
     alreadyWatched: false,
+  };
+}
+
+/**
+ * Update the short-lived backend progress stage while the verdict request is
+ * still running. Terminal overlay phases win over late polling responses.
+ */
+function setProgress(state, progress, elapsedSeconds = 0, totalElapsedSeconds = 0) {
+  if (state.phase !== "checking") {
+    return state;
+  }
+  return {
+    ...state,
+    progress,
+    progressElapsedSeconds: Number.isFinite(elapsedSeconds) ? Math.max(0, elapsedSeconds) : 0,
+    totalElapsedSeconds: Number.isFinite(totalElapsedSeconds) ? Math.max(0, totalElapsedSeconds) : 0,
   };
 }
 
@@ -213,6 +235,7 @@ function undismissOverlay(state) {
 if (typeof module !== "undefined" && module.exports) {
   module.exports = {
     createOverlayState,
+    setProgress,
     applyVerdictResult,
     markContextInvalidated,
     markAlreadyWatched,

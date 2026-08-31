@@ -12,6 +12,7 @@ const assert = require("node:assert/strict");
 
 const {
   createOverlayState,
+  setProgress,
   applyVerdictResult,
   markContextInvalidated,
   markAlreadyWatched,
@@ -28,6 +29,9 @@ const {
 test("createOverlayState starts checking, not collapsed, not dismissed, no watch note, not already watched", () => {
   assert.deepEqual(createOverlayState(), {
     phase: "checking",
+    progress: "checking_captions",
+    progressElapsedSeconds: 0,
+    totalElapsedSeconds: 0,
     data: null,
     collapsed: false,
     collapsedByFullscreen: false,
@@ -35,6 +39,19 @@ test("createOverlayState starts checking, not collapsed, not dismissed, no watch
     watchNote: null,
     alreadyWatched: false,
   });
+});
+
+test("setProgress updates the visible checking stage", () => {
+  const state = createOverlayState();
+  const next = setProgress(state, "downloading_audio", 1.2, 3.4);
+  assert.equal(next.progress, "downloading_audio");
+  assert.equal(next.progressElapsedSeconds, 1.2);
+  assert.equal(next.totalElapsedSeconds, 3.4);
+});
+
+test("setProgress ignores late polling after a terminal result", () => {
+  const state = applyVerdictResult(createOverlayState(), { novelty: 7 });
+  assert.equal(setProgress(state, "transcribing"), state);
 });
 
 test("applyVerdictResult with a verdict object moves to phase verdict, data is the verdict as-is", () => {

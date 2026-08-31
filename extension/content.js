@@ -265,6 +265,15 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     }
     GroundhogOverlay.setResult(message.videoId, message.result);
   }
+  if (message.type === "GROUNDHOG_TRANSCRIPT_STATUS") {
+    const status = message.status || {};
+    GroundhogOverlay.setProgress(
+      message.videoId,
+      status.stage,
+      status.elapsed_seconds,
+      status.total_elapsed_seconds,
+    );
+  }
   if (message.type === "GROUNDHOG_WATCHED_RESULT") {
     GroundhogOverlay.setWatchedResult(message.videoId, message.result);
   }

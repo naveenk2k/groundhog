@@ -9,9 +9,20 @@ Run directly: python -m companion.test_transcript
 (also discoverable by unittest/pytest as usual)
 """
 
+import tempfile
 import unittest
+from pathlib import Path
+from unittest.mock import MagicMock, patch
 
-from companion.transcript import _extract_creator, _extract_published_at, _pick_subtitle_url, _vtt_to_text
+from companion import config
+from companion.transcript import (
+    _extract_creator,
+    _extract_published_at,
+    _media_ydl_opts,
+    _pick_subtitle_url,
+    _try_local_transcription,
+    _vtt_to_text,
+)
 
 
 class PickSubtitleUrlTest(unittest.TestCase):
@@ -76,6 +87,45 @@ class PickSubtitleUrlTest(unittest.TestCase):
         }
         self.assertEqual(_pick_subtitle_url(info), "https://example.com/manual-en.srv3")
 
+
+class AudioOptionsTest(unittest.TestCase):
+    def test_media_download_options_do_not_force_caption_client(self):
+        options = _media_ydl_opts("/tmp/audio.%(ext)s")
+
+        self.assertEqual(options["format"], "bestaudio/best")
+        self.assertEqual(options["outtmpl"], "/tmp/audio.%(ext)s")
+        self.assertNotIn("extractor_args", options)
+        self.assertNotIn("skip_download", options)
+
+    def test_local_transcription_uses_normal_media_download(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            model_path = Path(temp_dir) / "model.bin"
+            model_path.touch()
+            fake_ydl = MagicMock()
+            ydl_factory = MagicMock(return_value=fake_ydl)
+
+            def download(url, download):
+                output_template = ydl_factory.call_args.args[0]["outtmpl"]
+                Path(output_template.replace("%(ext)s", "m4a")).write_bytes(b"audio")
+                self.assertTrue(download)
+                self.assertIn("youtube.com/watch?v=video", url)
+                return {"duration": 120}
+
+            fake_ydl.extract_info.side_effect = download
+            fake_ydl.__enter__.return_value = fake_ydl
+            with (
+                patch.object(config, "WHISPER_MODEL", model_path),
+                patch("companion.transcript.yt_dlp.YoutubeDL", ydl_factory),
+                patch("companion.transcript.transcribe_audio", return_value="recognized") as transcribe,
+            ):
+                result = _try_local_transcription("video", {})
+
+            self.assertEqual(result, "recognized")
+            options = ydl_factory.call_args.args[0]
+            self.assertEqual(options["format"], "bestaudio/best")
+            self.assertNotIn("extractor_args", options)
+            transcribe.assert_called_once()
+            self.assertEqual(transcribe.call_args.kwargs["duration_seconds"], 120)
 
 class ExtractCreatorTest(unittest.TestCase):
     def test_uses_uploader_when_present(self):

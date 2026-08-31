@@ -38,6 +38,11 @@ const COMPANION_ORIGIN = "http://127.0.0.1:8787";
 // readModel()/options-model.js) and forwarded on every request.
 const VERDICT_PATH = "/verdict";
 
+// companion/app.py's short-lived transcript progress endpoint. The
+// background worker polls this while the longer /verdict request is running
+// and routes updates back to the content script that owns the overlay.
+const TRANSCRIPT_STATUS_PATH_PREFIX = "/transcript/status/";
+
 // companion/app.py's POST /videos/watched. Fires once per video, when
 // content.js's WatchThresholdTracker crosses the 70%/5-minute watch
 // threshold. The companion fetches the transcript, embeds it, and adds it
@@ -209,6 +214,83 @@ async function requestVerdict(videoId) {
 }
 
 /**
+ * Poll the companion's in-memory transcript progress and return a stop
+ * function. Polling is intentionally owned by the background worker because
+ * it already owns the authenticated companion requests; content.js only
+ * receives small status messages and remains YouTube-page focused.
+ */
+function startTranscriptStatusPolling(videoId, tabId) {
+  let stopped = false;
+  let timerId = null;
+
+  const sendStatus = async (status) => {
+    if (tabId == null || stopped || !status) {
+      return;
+    }
+    chrome.tabs.sendMessage(tabId, {
+      type: "GROUNDHOG_TRANSCRIPT_STATUS",
+      videoId,
+      status,
+    }).catch(() => {});
+  };
+
+  const poll = async () => {
+    if (stopped) {
+      return;
+    }
+    try {
+      const secret = await readSecret();
+      if (secret) {
+        const response = await fetch(
+          COMPANION_ORIGIN + TRANSCRIPT_STATUS_PATH_PREFIX + encodeURIComponent(videoId),
+          { headers: { [SECRET_HEADER]: secret } },
+        );
+        if (response.ok) {
+          await sendStatus(await response.json());
+        }
+      }
+    } catch (_err) {
+      // The verdict request remains the source of truth. A status poll failing
+      // must never turn a healthy verdict into an error or noisy overlay.
+    }
+    if (!stopped) {
+      timerId = setTimeout(poll, 500);
+    }
+  };
+
+  poll();
+  return () => {
+    stopped = true;
+    if (timerId !== null) {
+      clearTimeout(timerId);
+    }
+  };
+}
+
+async function requestFinalTranscriptStatus(videoId, tabId) {
+  try {
+    const secret = await readSecret();
+    if (!secret || tabId == null) {
+      return;
+    }
+    const response = await fetch(
+      COMPANION_ORIGIN + TRANSCRIPT_STATUS_PATH_PREFIX + encodeURIComponent(videoId),
+      { headers: { [SECRET_HEADER]: secret } },
+    );
+    if (response.ok) {
+      chrome.tabs.sendMessage(tabId, {
+        type: "GROUNDHOG_TRANSCRIPT_STATUS",
+        videoId,
+        status: await response.json(),
+      }).catch(() => {});
+    }
+  } catch (_err) {
+    // The verdict result is still authoritative if the final timing fetch
+    // loses a race with a tab navigation or companion restart.
+  }
+}
+
+/**
  * Call the companion's POST /videos/watched for a video and return
  * `{ added, reason }` - companion/app.py's videos_watched always returns
  * this shape with a 200 (a missing transcript is a normal "not added"
@@ -351,7 +433,10 @@ chrome.runtime.onMessage.addListener((message, sender) => {
   if (message.type === "GROUNDHOG_VIDEO_OPENED" && message.videoId) {
     const tabId = sender && sender.tab ? sender.tab.id : null;
     logBreadcrumb("verdict_message_received", { videoId: message.videoId, tabId });
+    const stopTranscriptStatusPolling = startTranscriptStatusPolling(message.videoId, tabId);
     requestVerdict(message.videoId).then(async (result) => {
+      stopTranscriptStatusPolling();
+      await requestFinalTranscriptStatus(message.videoId, tabId);
       await logBreadcrumb("verdict_settled", {
         videoId: message.videoId,
         tabId,

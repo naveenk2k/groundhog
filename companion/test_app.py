@@ -10,12 +10,14 @@ and the real request never gets sent at all.
 
 import tempfile
 import unittest
+import inspect
 from pathlib import Path
 
 from starlette.testclient import TestClient
 
 from companion import config as companion_config
 from companion import corpus
+from companion import transcript_status
 from companion.config import SECRET_HEADER
 
 # Redirect the secret file and corpus DB to private temp paths by
@@ -52,7 +54,7 @@ corpus.CORPUS_DB_FILE = Path(tempfile.mktemp(suffix=".sqlite"))
 # regardless of the ambient environment.
 companion_config.TRACING_ENABLED = False
 
-from companion.app import app  # noqa: E402 - must follow the patching above
+from companion.app import app, verdict_endpoint  # noqa: E402 - must follow the patching above
 
 
 class CorsPreflightTest(unittest.TestCase):
@@ -74,6 +76,14 @@ class CorsPreflightTest(unittest.TestCase):
     def test_real_request_still_requires_the_secret_header(self):
         response = self.client.post("/verdict", json={"video_id": "abc", "k": 5})
         self.assertEqual(response.status_code, 401)
+
+
+class VerdictConcurrencyTest(unittest.TestCase):
+    def test_blocking_verdict_pipeline_runs_outside_the_event_loop(self):
+        # yt-dlp, ffmpeg, Whisper, embeddings, and Gemini are all blocking
+        # operations. Keeping the route synchronous makes FastAPI dispatch it
+        # to its worker thread, leaving the event loop free for status polls.
+        self.assertFalse(inspect.iscoroutinefunction(verdict_endpoint))
 
 
 class GetVideoLookupTest(unittest.TestCase):
@@ -113,6 +123,27 @@ class GetVideoLookupTest(unittest.TestCase):
 
     def test_requires_the_secret_header_like_every_other_route(self):
         response = self.client.get("/videos/already_watched_id")
+        self.assertEqual(response.status_code, 401)
+
+
+class TranscriptStatusTest(unittest.TestCase):
+    def setUp(self):
+        transcript_status._statuses.clear()
+        self.client = TestClient(app)
+
+    def test_reports_current_transcript_stage(self):
+        transcript_status.set_status("status-video", "transcribing")
+        response = self.client.get(
+            "/transcript/status/status-video", headers={SECRET_HEADER: "test-secret"}
+        )
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["stage"], "transcribing")
+        self.assertGreaterEqual(payload["elapsed_seconds"], 0.0)
+        self.assertGreaterEqual(payload["total_elapsed_seconds"], payload["elapsed_seconds"])
+
+    def test_requires_the_secret_header(self):
+        response = self.client.get("/transcript/status/status-video")
         self.assertEqual(response.status_code, 401)
 
 

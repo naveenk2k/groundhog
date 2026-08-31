@@ -303,11 +303,49 @@ if (typeof module !== "undefined" && module.exports) {
   let shadowRoot = null;
   let els = null; // cached references into the shadow DOM, set up in ensureDom()
   let watchNoteTimer = null; // pending auto-fade for state.watchNote, see setWatchedResult
+  let progressTimer = null;
+  let progressStageStartedAt = 0;
+  let progressTotalStartedAt = 0;
+  let progressTimerStage = null;
 
   // How long the corpus-add note (state.watchNote) stays visible before
   // auto-fading - long enough to read a short sentence, short enough not to
   // linger like a permanent status line.
   const WATCH_NOTE_TIMEOUT_MS = 4000;
+
+  function stopProgressTimer() {
+    if (progressTimer !== null) {
+      clearInterval(progressTimer);
+      progressTimer = null;
+    }
+    progressTimerStage = null;
+  }
+
+  function syncProgressTimer(progress, elapsedSeconds, totalElapsedSeconds) {
+    const now = performance.now();
+    const stageElapsed = Number.isFinite(elapsedSeconds) ? Math.max(0, elapsedSeconds) : 0;
+    const totalElapsed = Number.isFinite(totalElapsedSeconds) ? Math.max(0, totalElapsedSeconds) : 0;
+
+    if (progressTimerStage !== progress) {
+      progressTimerStage = progress;
+      progressStageStartedAt = now - stageElapsed * 1000;
+    }
+    if (!progressTotalStartedAt || progress === "checking_captions") {
+      progressTotalStartedAt = now - totalElapsed * 1000;
+    }
+    if (progressTimer === null) {
+      progressTimer = setInterval(() => {
+        if (state.phase !== "checking") {
+          stopProgressTimer();
+          return;
+        }
+        const stageSeconds = Math.max(0, (performance.now() - progressStageStartedAt) / 1000);
+        const totalSeconds = Math.max(0, (performance.now() - progressTotalStartedAt) / 1000);
+        state = setProgress(state, state.progress, stageSeconds, totalSeconds);
+        render();
+      }, 1000);
+    }
+  }
 
   /**
    * Turn a raw POST /videos/watched result (companion/app.py's
@@ -478,16 +516,29 @@ if (typeof module !== "undefined" && module.exports) {
       /* No gap: the dots span sits flush against the label text so it
        * reads as "...history..." with no visible space before the dots. */
     }
-    .ghog-dots::after {
-      content: "";
-      animation: ghog-dots 1.4s steps(4, end) infinite;
+    .ghog-ellipsis {
+      display: inline-block;
+      animation: ghog-ellipsis-blink 1.4s ease-in-out infinite;
     }
-    @keyframes ghog-dots {
-      0% { content: ""; }
-      25% { content: "."; }
-      50% { content: ".."; }
-      75% { content: "..."; }
-      100% { content: ""; }
+    .ghog-progress-time,
+    .ghog-timing {
+      color: var(--ghog-fg-secondary);
+      font-variant-numeric: tabular-nums;
+      font-size: 10.5px;
+      font-weight: 400;
+      opacity: 0.65;
+    }
+    .ghog-timing {
+      margin-top: 10px;
+      text-align: right;
+    }
+    .ghog-progress-time {
+      margin-left: auto;
+      white-space: nowrap;
+    }
+    @keyframes ghog-ellipsis-blink {
+      0%, 100% { opacity: 0.35; }
+      50% { opacity: 1; }
     }
 
     /* "Can't evaluate" badge - deliberately distinct from both "checking..."
@@ -881,6 +932,11 @@ if (typeof module !== "undefined" && module.exports) {
     els = { host, root, panel, body, footer, markWatchedBtn, watchNote, badge, reloadBtn };
   }
 
+  function formatElapsed(seconds) {
+    const value = Number.isFinite(seconds) ? Math.max(0, seconds) : 0;
+    return Math.floor(value) + "s";
+  }
+
   /** Build the body's inner content for the current state. Pure DOM construction, no side effects on `state`. */
   function renderBody() {
     const body = els.body;
@@ -890,11 +946,25 @@ if (typeof module !== "undefined" && module.exports) {
       const p = document.createElement("div");
       p.className = "ghog-checking";
       const label = document.createElement("span");
-      label.textContent = "Checking your watch history";
+      const progressLabels = {
+        checking_captions: "Checking for captions",
+        downloading_audio: "Downloading audio",
+        transcribing: "Transcribing locally",
+        evaluating: "Evaluating video",
+        complete: "Finishing up",
+      };
+      label.textContent = progressLabels[state.progress] || "Checking your watch history";
       const dots = document.createElement("span");
-      dots.className = "ghog-dots";
+      dots.className = "ghog-ellipsis";
+      dots.textContent = "…";
+      const timer = document.createElement("span");
+      timer.className = "ghog-progress-time";
+      timer.textContent =
+        "[" + formatElapsed(state.progressElapsedSeconds) +
+        " · " + formatElapsed(state.totalElapsedSeconds) + " total]";
       p.appendChild(label);
       p.appendChild(dots);
+      p.appendChild(timer);
       body.appendChild(p);
       return;
     }
@@ -1014,6 +1084,13 @@ if (typeof module !== "undefined" && module.exports) {
       reason.className = "ghog-cant-evaluate-reason";
       reason.textContent = classifyOverlayError(state.data.message, state.data.code);
       text.appendChild(reason);
+
+      if (state.totalElapsedSeconds > 0) {
+        const timing = document.createElement("div");
+        timing.className = "ghog-timing";
+        timing.textContent = "Evaluated in " + formatElapsed(state.totalElapsedSeconds);
+        text.appendChild(timing);
+      }
 
       if (isSetupError(state.data.message, state.data.code)) {
         const action = document.createElement("button");
@@ -1171,6 +1248,13 @@ if (typeof module !== "undefined" && module.exports) {
         row.appendChild(meta);
         body.appendChild(row);
       });
+    }
+
+    if (state.totalElapsedSeconds > 0) {
+      const timing = document.createElement("div");
+      timing.className = "ghog-timing";
+      timing.textContent = "Evaluated in " + formatElapsed(state.totalElapsedSeconds);
+      body.appendChild(timing);
     }
   }
 
@@ -1336,7 +1420,12 @@ if (typeof module !== "undefined" && module.exports) {
     /** Called on every fresh video-opened request - see content.js. Always starts un-collapsed, un-dismissed, showing "checking...". */
     reset(videoId) {
       currentVideoId = videoId;
+      stopProgressTimer();
+      progressTotalStartedAt = performance.now();
+      progressStageStartedAt = progressTotalStartedAt;
+      progressTimerStage = "checking_captions";
       state = createOverlayState();
+      syncProgressTimer(state.progress, 0, 0);
       if (watchNoteTimer) {
         clearTimeout(watchNoteTimer);
         watchNoteTimer = null;
@@ -1349,6 +1438,16 @@ if (typeof module !== "undefined" && module.exports) {
         return;
       }
       state = applyVerdictResult(state, result);
+      stopProgressTimer();
+      render();
+    },
+    /** Called by content.js while the companion's verdict request is running. */
+    setProgress(videoId, progress, elapsedSeconds, totalElapsedSeconds) {
+      if (videoId !== currentVideoId) {
+        return;
+      }
+      state = setProgress(state, progress, elapsedSeconds, totalElapsedSeconds);
+      syncProgressTimer(progress, elapsedSeconds, totalElapsedSeconds);
       render();
     },
     /**
@@ -1487,6 +1586,7 @@ if (typeof module !== "undefined" && module.exports) {
      */
     teardown() {
       currentVideoId = null;
+      stopProgressTimer();
       state = createOverlayState();
       if (watchNoteTimer) {
         clearTimeout(watchNoteTimer);

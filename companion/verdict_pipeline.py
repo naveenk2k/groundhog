@@ -20,6 +20,7 @@ from ddtrace.trace import tracer
 
 from companion import corpus, verdict
 from companion.transcript import TranscriptResult, fetch_transcript
+from companion.transcript_status import set_status
 from companion.verdict import Verdict, VerdictErrorResult
 
 logger = logging.getLogger(__name__)
@@ -113,13 +114,19 @@ def run_verdict_pipeline(
     the LLM call itself never raises.
     """
     logger.info("verdict requested for video %s", video_id)
+    # Start a fresh UI timing window even if the transcript itself comes from
+    # the short-lived cache. Otherwise a reload of the same video inherits
+    # the previous request's start time.
+    set_status(video_id, "checking_captions")
 
     with _traced_stage("transcript_fetch"):
         fetched = _cached_fetch_transcript(video_id)
     if fetched["transcript"] is None:
         logger.error("no transcript for video %s: %s", video_id, fetched["reason"])
+        set_status(video_id, "complete")
         return {"error": "No transcript available for this video.", "code": "no_transcript"}
 
+    set_status(video_id, "evaluating")
     with _traced_stage("embed"):
         embedding = corpus.embed_text(fetched["transcript"])
 
@@ -143,6 +150,7 @@ def run_verdict_pipeline(
     with _traced_stage("gemini_call"):
         result = verdict.get_verdict(new_video, matches, **verdict_kwargs)
 
+    set_status(video_id, "complete")
     return result
 
 
@@ -162,8 +170,10 @@ def add_watched_video(conn: apsw.Connection, video_id: str) -> WatchedResult:
     with _traced_stage("transcript_fetch"):
         fetched = _cached_fetch_transcript(video_id)
     if fetched["transcript"] is None:
+        set_status(video_id, "complete")
         return {"added": False, "video_id": video_id, "title": None, "reason": fetched["reason"]}
 
+    set_status(video_id, "evaluating")
     with _traced_stage("corpus_insert"):
         corpus.insert_video(
             conn,
@@ -175,4 +185,5 @@ def add_watched_video(conn: apsw.Connection, video_id: str) -> WatchedResult:
             published_at=fetched.get("published_at") or "",
         )
 
+    set_status(video_id, "complete")
     return {"added": True, "video_id": video_id, "title": fetched["title"], "reason": None}

@@ -13,7 +13,7 @@ google-genai
 # PO-token-exempt clients (we use android_vr - see companion/transcript.py)
 # moves over time, and yt-dlp is actively maintained against exactly that
 # churn. See DECISIONS.md "Transcript retrieval".
-yt-dlp==2025.10.14
+yt-dlp==2026.8.19
 
 # Local embeddings (#3): CPU-friendly, keeps everything on-machine.
 sentence-transformers

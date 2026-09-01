@@ -54,6 +54,25 @@ class GetVerdictTest(unittest.TestCase):
         self.assertEqual(result["novelty"], 7)
         self.assertNotIn("error", result)
 
+    def test_successful_verdict_removes_markdown_before_reaching_the_overlay(self):
+        response = MagicMock()
+        response.parsed = {
+            "novelty": 7,
+            "execution": 8,
+            "depth": 6,
+            "explanation": "This exposes **deceptive practices** in *prediction markets*.",
+            "recommendation": "Watch it for `specific` analysis.",
+        }
+        client = _fake_client(generate_content_result=response)
+
+        result = verdict.get_verdict(NEW_VIDEO, [], client=client)
+
+        self.assertEqual(
+            result["explanation"],
+            "This exposes deceptive practices in prediction markets.",
+        )
+        self.assertEqual(result["recommendation"], "Watch it for specific analysis.")
+
     def test_success_echoes_title_and_creator_from_new_video(self):
         # title/creator aren't part of Gemini's structured response (see
         # _VERDICT_SCHEMA) - get_verdict attaches them itself from the

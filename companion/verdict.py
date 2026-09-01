@@ -22,6 +22,7 @@ propagating, so a slow or broken call can't hang or crash the caller.
 from __future__ import annotations
 
 import logging
+import re
 import os
 from dataclasses import dataclass
 from datetime import datetime
@@ -71,6 +72,28 @@ SIMILAR_VIDEO_DISTANCE_THRESHOLD = 0.78
 # Keeps the overlay's "Very similar to" section compact even when more than
 # 3 corpus matches clear the threshold.
 _MAX_SIMILAR_VIDEOS = 3
+
+# The overlay intentionally renders model output with ``textContent``, not a
+# Markdown/HTML renderer. Keep its contract plain text by removing only the
+# common inline Markdown wrappers a model may still emit despite the prompt.
+# The word-boundary guards preserve literal asterisks/underscores in normal
+# prose (for example, mathematical expressions and snake_case identifiers).
+_INLINE_CODE_RE = re.compile(r"`([^`\n]+)`")
+_ASTERISK_EMPHASIS_RE = re.compile(r"(?<![\w*])(\*{1,3})(?=\S)(.+?)(?<=\S)\1(?!\*)")
+_UNDERSCORE_EMPHASIS_RE = re.compile(r"(?<![\w_])(_{1,3})(?=\S)(.+?)(?<=\S)\1(?!_)")
+
+
+def _overlay_plain_text(value: str) -> str:
+    """Remove common inline Markdown from a model string for text-only UI."""
+    text = _INLINE_CODE_RE.sub(r"\1", value)
+    # Nested Markdown can need more than one pass (e.g. ``***important***``).
+    for _ in range(3):
+        normalized = _ASTERISK_EMPHASIS_RE.sub(r"\2", text)
+        normalized = _UNDERSCORE_EMPHASIS_RE.sub(r"\2", normalized)
+        if normalized == text:
+            break
+        text = normalized
+    return text
 
 # A select subset of an OpenAPI 3.0 schema object - what Gemini's
 # response_schema accepts. No `additionalProperties` (not part of that
@@ -123,6 +146,8 @@ _VERDICT_SCHEMA = {
                 "the abstract. Mention when that video was watched only "
                 "if it adds something useful to say - not as a "
                 "mechanical timestamp on every sentence."
+                " Use plain text only: no Markdown, HTML, bullets, or "
+                "formatting markers."
             ),
         },
         "recommendation": {
@@ -131,7 +156,9 @@ _VERDICT_SCHEMA = {
                 "A short, holistic, plain-language take on whether the "
                 "video is worth watching, given everything above - "
                 "written directly to the viewer ('you'), not about them. "
-                "Not a formula on the scores - your own judgment call."
+                "Not a formula on the scores - your own judgment call. "
+                "Use plain text only: no Markdown, HTML, bullets, or "
+                "formatting markers."
             ),
         },
     },
@@ -186,7 +213,9 @@ just don't bring it up.
 Return your scores and a short, concrete explanation as JSON matching the \
 required schema. There is no scoring formula behind these numbers - give \
 your own honest judgment, grounded in specifics from the transcripts, not \
-a generic summary."""
+a generic summary. The explanation and recommendation are displayed in a \
+plain-text overlay: do not use Markdown, HTML, bullets, or formatting \
+markers such as asterisks, underscores, or backticks."""
 
 
 class SimilarVideo(TypedDict):
@@ -410,8 +439,8 @@ def get_verdict(
         "novelty": data["novelty"],
         "execution": data["execution"],
         "depth": data["depth"],
-        "explanation": data["explanation"],
-        "recommendation": data["recommendation"],
+        "explanation": _overlay_plain_text(data["explanation"]),
+        "recommendation": _overlay_plain_text(data["recommendation"]),
         "title": new_video.title,
         "creator": new_video.creator,
         "similar_videos": _similar_videos(matches),

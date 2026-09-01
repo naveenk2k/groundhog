@@ -272,20 +272,18 @@ worked before this existed.
 
 ## Transcript fetch caching
 
-**Decision:** `companion/verdict_pipeline.py` caches the last-fetched
-transcript per video ID for 10 minutes (`_cached_fetch_transcript`, issue
-#33), capped at 50 entries with oldest-first eviction. Both the verdict path
-and the manual "Mark as watched" `add_watched_video` path share this cache.
+**Decision:** `companion/transcript_store.py` uses a two-tier transcript
+cache: a 10-minute in-memory cache, capped at 50 entries, and a durable
+`transcript_cache` SQLite table for successful fetches. The verdict,
+"Mark as watched", and transcript-viewer paths all use the same store.
 
-**Why:** a verdict check and a subsequent manual "Mark as watched" click for
-the same video (or a retry after a transient failure) were each paying the
-full 2-4s transcript fetch independently, even though nothing about the
-video changed between them. A short TTL avoids serving a stale transcript
-indefinitely while still collapsing the common back-to-back case. The
-failure result is cached too (not just successes) — a `no_transcript` video
-won't change on a second attempt within the window, so caching that outcome
-also saves the repeat fetch a manual retry or "Mark as watched" click would
-otherwise trigger.
+**Why:** a verdict check, transcript view, and later manual "Mark as
+watched" action can otherwise each pay the full yt-dlp or local-ASR cost for
+the same video. Persisting successful fetches makes reopening a video fast
+even after the companion restarts. Failures remain memory-only so a temporary
+network failure cannot become a durable negative result. The cache is
+separate from the corpus: an opened-but-unwatched video must never become a
+similarity-search candidate merely because Groundhog fetched its transcript.
 
 ## Removing a video from watch history: hard delete, not soft
 

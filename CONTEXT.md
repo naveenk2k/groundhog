@@ -32,6 +32,10 @@ drifting to synonyms.
   `watched_at`, `transcript_text`, and an `embedding` vector (384-dim,
   `all-MiniLM-L6-v2`). The raw transcript is kept alongside the embedding so
   the corpus can be re-embedded if the embedding model ever changes.
+- **transcript cache** — a separate two-tier store for every successfully
+  fetched transcript: a short-lived in-memory cache plus durable SQLite rows
+  in `corpus.db`. Cached transcripts are not corpus videos and have no
+  embedding or effect on verdict similarity search until marked watched.
 - **watch threshold** — a video counts as "watched" (added to the corpus)
   once 70% or 5 minutes has elapsed, whichever comes first, tracked via a
   `timeupdate` listener (`watch-tracker.js`). Below this, opening a video

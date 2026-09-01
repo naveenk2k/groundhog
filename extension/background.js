@@ -48,6 +48,9 @@ const TRANSCRIPT_STATUS_PATH_PREFIX = "/transcript/status/";
 // threshold. The companion fetches the transcript, embeds it, and adds it
 // to the corpus.
 const VIDEO_WATCHED_PATH = "/videos/watched";
+// Finish before the overlay's own 60s safety timer so a stalled add returns a
+// normal, retryable result instead of leaving the UI to infer the failure.
+const WATCHED_REQUEST_TIMEOUT_MS = 55000;
 
 // companion/app.py's GET /videos/{video_id}. Fires once per video-opened
 // navigation, before ever requesting a verdict - skips the Gemini call
@@ -77,6 +80,12 @@ async function readSecret() {
 // permission requirements are murkier than just reading `.url` off tabs
 // this extension already has full visibility into.
 const OPTIONS_URL = chrome.runtime.getURL("options.html");
+
+function openTranscriptPage(videoId) {
+  return chrome.tabs.create({
+    url: chrome.runtime.getURL("transcript.html?video_id=" + encodeURIComponent(videoId)),
+  });
+}
 
 async function findOptionsTab() {
   const tabs = await chrome.tabs.query({});
@@ -315,6 +324,8 @@ async function postVideoWatched(videoId) {
   }
 
   await logBreadcrumb("watched_fetch_start", { videoId });
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), WATCHED_REQUEST_TIMEOUT_MS);
   try {
     const response = await fetch(COMPANION_ORIGIN + VIDEO_WATCHED_PATH, {
       method: "POST",
@@ -323,6 +334,7 @@ async function postVideoWatched(videoId) {
         [SECRET_HEADER]: secret,
       },
       body: JSON.stringify({ video_id: videoId }),
+      signal: controller.signal,
     });
     await logBreadcrumb("watched_fetch_responded", { videoId, status: response.status });
     if (!response.ok) {
@@ -337,9 +349,12 @@ async function postVideoWatched(videoId) {
   } catch (err) {
     // The companion may just not be running - fail quietly rather than
     // spamming the console.
+    const timedOut = err && err.name === "AbortError";
     console.warn("Groundhog: watched-video request failed", err);
     await logBreadcrumb("watched_fetch_error", { videoId, name: err && err.name, message: err && err.message });
-    return { added: false, reason: "companion_unreachable" };
+    return { added: false, reason: timedOut ? "timeout" : "companion_unreachable" };
+  } finally {
+    clearTimeout(timeoutId);
   }
 }
 
@@ -530,6 +545,9 @@ chrome.runtime.onMessage.addListener((message, sender) => {
     // the content script the overlay's "Open settings" button lives in -
     // see content.js's GroundhogOverlay.onOpenSettingsClick.
     openOrFocusOptionsPage();
+  }
+  if (message.type === "GROUNDHOG_OPEN_TRANSCRIPT" && message.videoId) {
+    openTranscriptPage(message.videoId);
   }
 });
 

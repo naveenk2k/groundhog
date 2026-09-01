@@ -273,8 +273,23 @@ function cannotMarkWatched(code) {
   return typeof code === "string" && _UNWATCHABLE_CODES.has(code);
 }
 
+/** Successful verdicts alone may claim a completed evaluation duration. */
+function shouldShowEvaluationTiming(state) {
+  return Boolean(
+    state && state.phase === "verdict" &&
+    Number.isFinite(state.totalElapsedSeconds) && state.totalElapsedSeconds > 0
+  );
+}
+
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = { classifyOverlayError, isSetupError, isRetryableError, cannotMarkWatched, isGeminiBusyError };
+  module.exports = {
+    classifyOverlayError,
+    isSetupError,
+    isRetryableError,
+    cannotMarkWatched,
+    isGeminiBusyError,
+    shouldShowEvaluationTiming,
+  };
 }
 
 (function () {
@@ -385,6 +400,9 @@ if (typeof module !== "undefined" && module.exports) {
     }
     if (result && result.reason === "not_configured") {
       return { kind: "failure", message: "Groundhog isn't set up yet - open the options page." };
+    }
+    if (result && result.reason === "timeout") {
+      return { kind: "failure", message: "Adding this video took too long. Try again." };
     }
     return { kind: "failure", message: "Couldn't add this video to your watch history." };
   }
@@ -517,6 +535,10 @@ if (typeof module !== "undefined" && module.exports) {
     }
     .ghog-icon-btn:hover {
       background: var(--ghog-track);
+    }
+    .ghog-transcript-btn {
+      font-size: 14px;
+      font-weight: 600;
     }
 
     .ghog-body {
@@ -885,6 +907,17 @@ if (typeof module !== "undefined" && module.exports) {
     headerButtons.className = "ghog-header-buttons";
     header.appendChild(headerButtons);
 
+    const transcriptBtn = document.createElement("button");
+    transcriptBtn.className = "ghog-icon-btn ghog-transcript-btn";
+    transcriptBtn.title = "View transcript";
+    transcriptBtn.textContent = "CC";
+    transcriptBtn.addEventListener("click", () => {
+      if (typeof GroundhogOverlay.onOpenTranscriptClick === "function" && currentVideoId) {
+        GroundhogOverlay.onOpenTranscriptClick(currentVideoId);
+      }
+    });
+    headerButtons.appendChild(transcriptBtn);
+
     // Re-run button for a verdict already on screen - reuses the same
     // onRetryClick path the error phase's body "Retry" button already uses
     // (content.js's onRetryClick bypasses the lastPostedVideoId dedupe, so a
@@ -990,7 +1023,7 @@ if (typeof module !== "undefined" && module.exports) {
     root.appendChild(badge);
 
     els = {
-      host, root, panel, body, footer, markWatchedBtn, watchNote, badge, reloadBtn,
+      host, root, panel, body, footer, markWatchedBtn, watchNote, badge, reloadBtn, transcriptBtn,
       watchProgress, watchProgressLabel, watchProgressFill,
     };
   }
@@ -1153,13 +1186,6 @@ if (typeof module !== "undefined" && module.exports) {
       reason.textContent = classifyOverlayError(state.data.message, state.data.code);
       text.appendChild(reason);
 
-      if (state.totalElapsedSeconds > 0) {
-        const timing = document.createElement("div");
-        timing.className = "ghog-timing";
-        timing.textContent = "Evaluated in " + formatElapsed(state.totalElapsedSeconds);
-        text.appendChild(timing);
-      }
-
       if (isSetupError(state.data.message, state.data.code)) {
         const action = document.createElement("button");
         action.className = "ghog-cant-evaluate-action";
@@ -1318,7 +1344,7 @@ if (typeof module !== "undefined" && module.exports) {
       });
     }
 
-    if (state.totalElapsedSeconds > 0) {
+    if (shouldShowEvaluationTiming(state)) {
       const timing = document.createElement("div");
       timing.className = "ghog-timing";
       timing.textContent = "Evaluated in " + formatElapsed(state.totalElapsedSeconds);
@@ -1470,6 +1496,8 @@ if (typeof module !== "undefined" && module.exports) {
      * (shouldn't normally happen - content.js sets this at load time).
      */
     onOpenSettingsClick: null,
+    /** Set by content.js to open the current video's transcript in a separate extension tab. */
+    onOpenTranscriptClick: null,
     /**
      * Set by content.js to a function that posts GROUNDHOG_VIDEO_WATCHED
      * for the given video ID - the same message the automatic

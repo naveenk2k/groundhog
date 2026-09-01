@@ -21,6 +21,7 @@ from companion import config, corpus, tracing
 from companion.auth import SecretAuthMiddleware
 from companion.transcript import fetch_transcript
 from companion.transcript_status import get_status
+from companion.transcript_store import get_transcript
 from companion.verdict_pipeline import add_watched_video, run_verdict_pipeline
 
 # This is the single entry point for the companion process (uvicorn imports
@@ -185,9 +186,9 @@ async def root() -> dict:
 async def transcript(video_id: str) -> dict:
     """Fetch a YouTube video's transcript by ID.
 
-    Takes ~2-4 seconds per call (three sequential HTTPS round trips via
-    yt-dlp's android_vr client - see companion/transcript.py) - that's an
-    accepted cost, not something to optimize here.
+    Reuses a successful local transcript cache entry when one exists; the
+    initial external fetch can still take several seconds (and local ASR can
+    take longer for videos without captions).
 
     Always returns 200. A missing transcript (deleted/private video, no
     captions, non-English audio) is an expected outcome, represented as
@@ -195,7 +196,7 @@ async def transcript(video_id: str) -> dict:
     the extension's overlay treats this the same as any other "can't
     evaluate" case.
     """
-    return fetch_transcript(video_id)
+    return get_transcript(_get_corpus_conn(), video_id)
 
 
 @app.get("/transcript/status/{video_id}")

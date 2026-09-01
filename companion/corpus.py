@@ -41,6 +41,7 @@ import apsw
 import sqlite_vec
 
 from companion.config import CORPUS_DB_FILE, EMBEDDING_DIMENSIONS, EMBEDDING_MODEL_NAME
+from companion.transcript_store import ensure_schema as ensure_transcript_cache_schema
 
 logger = logging.getLogger(__name__)
 
@@ -157,6 +158,7 @@ def get_connection(db_path: Optional[str] = None) -> apsw.Connection:
     conn.enable_load_extension(False)
     conn.execute(_SCHEMA)
     _apply_migrations(conn)
+    ensure_transcript_cache_schema(conn)
     return conn
 
 

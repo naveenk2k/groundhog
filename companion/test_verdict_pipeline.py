@@ -15,7 +15,7 @@ from unittest.mock import patch
 from ddtrace.internal.writer import TraceWriter
 from ddtrace.trace import tracer
 
-from companion import corpus, verdict_pipeline
+from companion import corpus, transcript_store, verdict_pipeline
 
 
 class _ListWriter(TraceWriter):
@@ -46,11 +46,9 @@ class VerdictPipelineTest(unittest.TestCase):
         os.close(fd)
         os.remove(self.db_path)  # let apsw create it fresh
         self.conn = corpus.get_connection(self.db_path)
-        # The transcript cache is module-level state shared across tests -
-        # save/clear it here so cached results from one test can't leak into
-        # another, then restore whatever was there (normally nothing).
-        self._saved_transcript_cache = verdict_pipeline._transcript_cache
-        verdict_pipeline._transcript_cache = {}
+        # The short-lived cache is module-level state shared across tests.
+        self._saved_transcript_cache = transcript_store._memory_cache
+        transcript_store._memory_cache = {}
         self._saved_tracer_enabled = tracer.enabled
         self._saved_writer = tracer._span_aggregator.writer
         tracer.enabled = True
@@ -61,7 +59,7 @@ class VerdictPipelineTest(unittest.TestCase):
         self.conn.close()
         if os.path.exists(self.db_path):
             os.remove(self.db_path)
-        verdict_pipeline._transcript_cache = self._saved_transcript_cache
+        transcript_store._memory_cache = self._saved_transcript_cache
         tracer.enabled = self._saved_tracer_enabled
         tracer._span_aggregator.writer = self._saved_writer
 

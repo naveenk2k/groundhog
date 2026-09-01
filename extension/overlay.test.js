@@ -16,7 +16,20 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 
-const { classifyOverlayError, isSetupError, isRetryableError, cannotMarkWatched, isGeminiBusyError } = require("./overlay.js");
+const {
+  classifyOverlayError,
+  isSetupError,
+  isRetryableError,
+  cannotMarkWatched,
+  isGeminiBusyError,
+  shouldShowEvaluationTiming,
+} = require("./overlay.js");
+
+test("evaluation timing is reserved for successful verdicts", () => {
+  assert.equal(shouldShowEvaluationTiming({ phase: "verdict", totalElapsedSeconds: 58 }), true);
+  assert.equal(shouldShowEvaluationTiming({ phase: "error", totalElapsedSeconds: 58 }), false);
+  assert.equal(shouldShowEvaluationTiming({ phase: "verdict", totalElapsedSeconds: 0 }), false);
+});
 
 test("a recognized code wins over substring matching, even with mismatched/garbage message text", () => {
   // Deliberately mismatched raw message per code, to prove code (not the

@@ -131,6 +131,10 @@ GroundhogOverlay.onOpenSettingsClick = () => {
   safeSendMessage({ type: "GROUNDHOG_OPEN_OPTIONS" });
 };
 
+GroundhogOverlay.onOpenTranscriptClick = (videoId) => {
+  safeSendMessage({ type: "GROUNDHOG_OPEN_TRANSCRIPT", videoId });
+};
+
 // Lets the overlay's "Mark as watched" button send the same
 // GROUNDHOG_VIDEO_WATCHED message the automatic watch-threshold path
 // (handleTimeUpdate below) sends - background.js's postVideoWatched and its

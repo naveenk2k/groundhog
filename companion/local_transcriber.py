@@ -41,10 +41,16 @@ def sample_offsets(
     return [0.0, middle_start, last_start]
 
 
-def ffmpeg_segment_command(input_path: Path, output_path: Path, offset: float, duration: float) -> list[str]:
+def ffmpeg_segment_command(
+    input_path: Path,
+    output_path: Path,
+    offset: float,
+    duration: float,
+    executable: str = "ffmpeg",
+) -> list[str]:
     """Build the deterministic ffmpeg command used for one ASR segment."""
     return [
-        "ffmpeg",
+        executable,
         "-y",
         "-loglevel",
         "error",
@@ -126,6 +132,7 @@ def transcribe_audio(
     threads: int = 10,
     timeout_seconds: float = 30.0,
     executable: str = "whisper-cli",
+    ffmpeg_executable: str = "ffmpeg",
 ) -> str:
     """Normalize audio, sample long videos, and transcribe in one process."""
     with tempfile.TemporaryDirectory(prefix="groundhog-asr-") as temp_dir:
@@ -139,6 +146,7 @@ def transcribe_audio(
                 segment_path,
                 offset,
                 DEFAULT_SAMPLE_WINDOW_SECONDS if len(offsets) > 1 else max(1.0, duration_seconds),
+                executable=ffmpeg_executable,
             )
             try:
                 subprocess.run(command, check=True, capture_output=True, text=True, timeout=timeout_seconds)

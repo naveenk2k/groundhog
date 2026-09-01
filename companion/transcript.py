@@ -53,6 +53,7 @@ class TranscriptResult(TypedDict):
     title: str | None
     creator: str | None
     published_at: str | None
+    source: str | None
 
 
 class _SilentLogger:
@@ -133,6 +134,7 @@ def _try_local_transcription(video_id: str, info: dict) -> str | None:
                 threads=config.WHISPER_THREADS,
                 timeout_seconds=config.WHISPER_TIMEOUT_SECONDS,
                 executable=config.WHISPER_CLI,
+                ffmpeg_executable=config.FFMPEG,
             )
     except Exception as e:  # noqa: BLE001 - ASR is an optional fallback
         logging.getLogger(__name__).warning("local transcription failed for %s: %s", video_id, e)
@@ -250,6 +252,7 @@ def fetch_transcript(video_id: str) -> TranscriptResult:
                     "title": None,
                     "creator": None,
                     "published_at": None,
+                    "source": None,
                 }
 
             title = info.get("title")
@@ -267,6 +270,7 @@ def fetch_transcript(video_id: str) -> TranscriptResult:
                         "title": title,
                         "creator": creator,
                         "published_at": published_at,
+                        "source": "local_transcription",
                     }
                 return {
                     "transcript": None,
@@ -274,6 +278,7 @@ def fetch_transcript(video_id: str) -> TranscriptResult:
                     "title": title,
                     "creator": creator,
                     "published_at": published_at,
+                    "source": None,
                 }
 
             try:
@@ -285,6 +290,7 @@ def fetch_transcript(video_id: str) -> TranscriptResult:
                     "title": title,
                     "creator": creator,
                     "published_at": published_at,
+                    "source": None,
                 }
     except yt_dlp.utils.DownloadError as e:
         return {
@@ -293,6 +299,7 @@ def fetch_transcript(video_id: str) -> TranscriptResult:
             "title": None,
             "creator": None,
             "published_at": None,
+            "source": None,
         }
     except Exception as e:  # noqa: BLE001 - deliberately broad, see docstring
         return {
@@ -301,6 +308,7 @@ def fetch_transcript(video_id: str) -> TranscriptResult:
             "title": None,
             "creator": None,
             "published_at": None,
+            "source": None,
         }
 
     transcript = _vtt_to_text(vtt_text)
@@ -311,6 +319,7 @@ def fetch_transcript(video_id: str) -> TranscriptResult:
             "title": title,
             "creator": creator,
             "published_at": published_at,
+            "source": None,
         }
 
     set_status(video_id, "complete")
@@ -320,4 +329,5 @@ def fetch_transcript(video_id: str) -> TranscriptResult:
         "title": title,
         "creator": creator,
         "published_at": published_at,
+        "source": "captions",
     }

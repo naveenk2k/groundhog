@@ -25,11 +25,13 @@ class SampleOffsetsTest(unittest.TestCase):
 
 class CommandTest(unittest.TestCase):
     def test_ffmpeg_normalizes_to_whisper_input(self):
-        command = ffmpeg_segment_command(Path("source.m4a"), Path("segment.wav"), 12.5, 20)
+        command = ffmpeg_segment_command(
+            Path("source.m4a"), Path("segment.wav"), 12.5, 20, executable="/opt/homebrew/bin/ffmpeg"
+        )
         self.assertEqual(
             command,
             [
-                "ffmpeg", "-y", "-loglevel", "error", "-ss", "12.5", "-i", "source.m4a",
+                "/opt/homebrew/bin/ffmpeg", "-y", "-loglevel", "error", "-ss", "12.5", "-i", "source.m4a",
                 "-t", "20", "-ar", "16000", "-ac", "1", "-c:a", "pcm_s16le", "segment.wav",
             ],
         )

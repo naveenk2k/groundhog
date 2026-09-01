@@ -57,6 +57,13 @@ WHISPER_MODEL = Path(
 WHISPER_THREADS = int(os.environ.get("GROUNDHOG_WHISPER_THREADS", "10"))
 WHISPER_TIMEOUT_SECONDS = float(os.environ.get("GROUNDHOG_WHISPER_TIMEOUT_SECONDS", "30"))
 
+# launchd's default PATH omits Homebrew, even when ffmpeg was installed there.
+# Resolve the usual macOS locations explicitly so the local ASR fallback works
+# identically from an interactive shell and the long-running companion.
+FFMPEG = os.environ.get("GROUNDHOG_FFMPEG") or shutil.which(
+    "ffmpeg", path="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
+) or "ffmpeg"
+
 # yt-dlp performs several network requests before it can expose a caption
 # track. Bound each socket operation and disable retries so a temporarily
 # stalled YouTube endpoint cannot keep the synchronous companion worker (and

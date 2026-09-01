@@ -136,6 +136,7 @@ class AudioOptionsTest(unittest.TestCase):
             self.assertNotIn("extractor_args", options)
             transcribe.assert_called_once()
             self.assertEqual(transcribe.call_args.kwargs["duration_seconds"], 120)
+            self.assertEqual(transcribe.call_args.kwargs["ffmpeg_executable"], config.FFMPEG)
 
 class ExtractCreatorTest(unittest.TestCase):
     def test_uses_uploader_when_present(self):

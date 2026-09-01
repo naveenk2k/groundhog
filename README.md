@@ -69,7 +69,7 @@ flowchart LR
     CS["content script<br/>+ on-page overlay<br/>(runs on the YouTube tab)"] --> BG["background<br/>service worker"]
     OPT["options page<br/>(your settings)"] --> BG
     BG -- "fetch() + secret header" --> API["Python companion<br/>localhost:8787"]
-    API --> YTD["yt-dlp<br/>(transcript)"]
+    API --> YTD["yt-dlp + local ASR<br/>(transcript)"]
     API --> DB[("sqlite-vec<br/>(your watch history)")]
     API --> GEM["Gemini<br/>(the verdict)"]
 ```
@@ -79,7 +79,8 @@ flowchart LR
   worker talks to the companion over HTTP; an options page holds your
   settings (see "Configuration" below).
 - **Python companion**: a FastAPI server that fetches the transcript via
-  `yt-dlp`, embeds it locally with `sentence-transformers`, searches a
+  `yt-dlp` (with an optional local-transcription fallback), embeds it locally
+  with `sentence-transformers`, searches a
   `sqlite-vec` corpus of your watch history for the closest topical matches,
   and sends the new video's full transcript plus the matches' full
   transcripts to Gemini for a structured verdict (novelty, execution, depth,
@@ -99,6 +100,10 @@ secret so a random tab in your browser can't interfere with the companion.
 4. It sends the new transcript plus those matches to Gemini, and the
    overlay shows the verdict a few seconds later.
 
+Successful transcripts are stored locally and reused for the verdict, the
+transcript viewer, and a later "Mark as watched" action. Reopening a video
+does not fetch or transcribe it again.
+
 For my full design rationale (why HTTP instead of native messaging, why
 Gemini instead of Claude, why full transcripts instead of excerpts, why a
 70%/5-minute watch threshold, etc.) see [`DECISIONS.md`](DECISIONS.md).
@@ -111,6 +116,11 @@ Gemini instead of Claude, why full transcripts instead of excerpts, why a
 - **Chrome or Safari** - same `extension/` folder works unpacked in either,
   no separate Safari build or Xcode step needed.
 - A free **Gemini API key** from [aistudio.google.com](https://aistudio.google.com)
+- **Optional local transcription**: `ffmpeg`, `whisper-cli`, and a Whisper
+  model at `.models/ggml-base.en.bin`. When YouTube has no usable English
+  captions, Groundhog can download the audio and transcribe it locally.
+  Long videos use short samples from the beginning, middle, and end to keep
+  this fast, so that text is not a full transcript.
 
 ## Setup
 
@@ -197,8 +207,16 @@ Gemini instead of Claude, why full transcripts instead of excerpts, why a
   collapsed to a pill or dismissed.
 - **Cmd+G** and **Cmd+Shift+G** (Ctrl on Windows/Linux) are set up as default
   shortcuts for the overlay and options page.
-- A video gets added to your watch history automatically once you watch
-  past 70% or 5 minutes, whichever comes first.
+- Click **CC** in the overlay to open the transcript in a separate tab.
+  Groundhog labels locally generated text so you can tell it apart from
+  YouTube captions.
+- While Groundhog works, the overlay shows its current step and elapsed time.
+  If a check or watch-history update times out, you can retry it.
+- A video gets added to your watch history automatically once you watch past
+  70% or 5 minutes, whichever comes first. You can also mark it as watched
+  manually, or remove it from watch history later.
+- When Groundhog finds a particularly close match from your history, it shows
+  that video alongside the verdict.
 
 ## Configuration
 

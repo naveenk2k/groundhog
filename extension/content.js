@@ -161,6 +161,7 @@ GroundhogOverlay.onRemoveClick = (videoId) => {
 GroundhogOverlay.onRetryClick = (videoId) => {
   GroundhogOverlay.reset(videoId);
   safeSendMessage({ type: "GROUNDHOG_VIDEO_OPENED", videoId });
+  retryWatchedVideoIfPastThreshold(videoId);
 };
 
 // Lets the overlay's inline model picker (shown only on gemini_busy errors,
@@ -312,14 +313,8 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
  * get wrong if that ever changes). `timeupdate` doesn't bubble, but the
  * capture phase still reaches it from an ancestor listener.
  */
-function handleTimeUpdate(event) {
-  const video = event.target;
+function maybeAddWatchedVideo(videoId, video) {
   if (!video || typeof video.currentTime !== "number") {
-    return;
-  }
-
-  const videoId = extractVideoId(window.location.href);
-  if (!videoId) {
     return;
   }
 
@@ -337,6 +332,30 @@ function handleTimeUpdate(event) {
     GroundhogOverlay.setWatchAddPending(videoId);
     safeSendMessage({ type: "GROUNDHOG_VIDEO_WATCHED", videoId });
   }
+}
+
+/**
+ * A verdict retry can happen after the normal one-shot watch-threshold
+ * request already timed out. Re-arm only the current video, then inspect the
+ * active player immediately: waiting for another `timeupdate` can otherwise
+ * leave someone past five minutes with an available companion but no add.
+ */
+function retryWatchedVideoIfPastThreshold(videoId) {
+  if (videoId !== extractVideoId(window.location.href) || videoId === noTranscriptVideoId) {
+    return;
+  }
+  if (!watchTracker.rearm(videoId)) {
+    return;
+  }
+  maybeAddWatchedVideo(videoId, document.querySelector("video"));
+}
+
+function handleTimeUpdate(event) {
+  const videoId = extractVideoId(window.location.href);
+  if (!videoId) {
+    return;
+  }
+  maybeAddWatchedVideo(videoId, event.target);
 }
 
 document.addEventListener("yt-navigate-finish", handleNavigation);

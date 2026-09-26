@@ -75,6 +75,22 @@ class WatchThresholdTracker {
   }
 
   /**
+   * Allow one more threshold check for the video already being tracked.
+   *
+   * A failed history-add consumes the normal one-shot threshold event. When
+   * the user explicitly retries the verdict after recovering the companion,
+   * content.js uses this to reconsider the player's current position without
+   * letting a stale retry re-arm a different video.
+   */
+  rearm(videoId) {
+    if (videoId !== this.videoId) {
+      return false;
+    }
+    this.fired = false;
+    return true;
+  }
+
+  /**
    * Call on every `timeupdate`. Returns `true` exactly once per video - the
    * moment `currentTime` first crosses the watch threshold for `videoId` -
    * and `false` on every other call (before the threshold, after it's

@@ -61,6 +61,7 @@ class WatchThresholdTracker {
   constructor() {
     this.videoId = null;
     this.fired = false;
+    this.alreadyWatched = false;
   }
 
   /**
@@ -72,6 +73,21 @@ class WatchThresholdTracker {
   reset(videoId) {
     this.videoId = videoId;
     this.fired = false;
+    this.alreadyWatched = false;
+  }
+
+  /**
+   * Permanently suppress threshold events for a video the corpus lookup has
+   * confirmed is already watched. Returns false for a stale lookup belonging
+   * to a different navigation.
+   */
+  markAlreadyWatched(videoId) {
+    if (videoId !== this.videoId) {
+      return false;
+    }
+    this.alreadyWatched = true;
+    this.fired = true;
+    return true;
   }
 
   /**
@@ -83,7 +99,7 @@ class WatchThresholdTracker {
    * letting a stale retry re-arm a different video.
    */
   rearm(videoId) {
-    if (videoId !== this.videoId) {
+    if (videoId !== this.videoId || this.alreadyWatched) {
       return false;
     }
     this.fired = false;
@@ -106,7 +122,7 @@ class WatchThresholdTracker {
     if (videoId !== this.videoId) {
       return false;
     }
-    if (this.fired) {
+    if (this.fired || this.alreadyWatched) {
       return false;
     }
     if (!Number.isFinite(currentTime)) {

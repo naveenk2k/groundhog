@@ -39,3 +39,14 @@ test("rearming the current video after a failed add lets its already-past-thresh
   assert.equal(tracker.rearm("video-id"), true);
   assert.equal(tracker.checkProgress("video-id", 302, 900), true);
 });
+
+test("a video confirmed already watched never fires or rearms at the threshold", () => {
+  const tracker = new WatchThresholdTracker();
+  tracker.reset("video-id");
+
+  assert.equal(tracker.markAlreadyWatched("other-video"), false);
+  assert.equal(tracker.markAlreadyWatched("video-id"), true);
+  assert.equal(tracker.checkProgress("video-id", 301, 900), false);
+  assert.equal(tracker.rearm("video-id"), false);
+  assert.equal(tracker.checkProgress("video-id", 302, 900), false);
+});

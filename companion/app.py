@@ -280,10 +280,9 @@ def videos_watched(payload: WatchedVideoRequest) -> dict:
     video you watched but that has no transcript just doesn't get added,
     without the extension treating it as a companion failure.
 
-    Re-watching an already-corpused video is not a special case here:
-    `corpus.insert_video` already upserts by `video_id` (replacing the
-    existing row rather than erroring or duplicating it), so calling this
-    endpoint again for the same video is naturally a no-op duplicate-wise.
+    Re-watching an already-corpused video returns
+    `{"added": false, "reason": "already_watched"}` without fetching,
+    embedding, or rewriting the existing corpus row.
     """
     with _corpus_connection() as conn:
         result = add_watched_video(conn, payload.video_id)

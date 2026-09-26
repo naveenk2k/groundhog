@@ -23,7 +23,15 @@ const {
   cannotMarkWatched,
   isGeminiBusyError,
   shouldShowEvaluationTiming,
+  describeWatchedResult,
 } = require("./overlay.js");
+
+test("an already-watched add result produces no notification", () => {
+  assert.equal(
+    describeWatchedResult({ added: false, reason: "already_watched" }),
+    null
+  );
+});
 
 test("evaluation timing is reserved for successful verdicts", () => {
   assert.equal(shouldShowEvaluationTiming({ phase: "verdict", totalElapsedSeconds: 58 }), true);

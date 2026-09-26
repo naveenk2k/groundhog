@@ -275,7 +275,8 @@ worked before this existed.
 **Decision:** `companion/transcript_store.py` uses a two-tier transcript
 cache: a 10-minute in-memory cache, capped at 50 entries, and a durable
 `transcript_cache` SQLite table for successful fetches. The verdict,
-"Mark as watched", and transcript-viewer paths all use the same store.
+"Mark as watched", and transcript-viewer paths all use the same store; any
+concurrent requests for the same video join one in-flight fetch.
 
 **Why:** a verdict check, transcript view, and later manual "Mark as
 watched" action can otherwise each pay the full yt-dlp or local-ASR cost for

@@ -11,6 +11,8 @@ from __future__ import annotations
 
 import time
 from collections.abc import Callable
+from dataclasses import dataclass
+from threading import Event, Lock
 
 import apsw
 
@@ -19,6 +21,19 @@ from companion.transcript import TranscriptResult, fetch_transcript
 _MEMORY_TTL_SECONDS = 10 * 60
 _MEMORY_MAX_ENTRIES = 50
 _memory_cache: dict[str, tuple[float, TranscriptResult]] = {}
+
+
+@dataclass
+class _InFlightFetch:
+    """One external fetch in progress for a video ID."""
+
+    complete: Event
+    result: TranscriptResult | None = None
+    error: BaseException | None = None
+
+
+_inflight_lock = Lock()
+_inflight: dict[str, _InFlightFetch] = {}
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS transcript_cache (
@@ -64,6 +79,33 @@ def _from_disk(conn: apsw.Connection, video_id: str) -> TranscriptResult | None:
         "creator": creator or None,
         "published_at": published_at or None,
         "source": source,
+    }
+
+
+def _from_corpus(conn: apsw.Connection, video_id: str) -> TranscriptResult | None:
+    """Promote an older watched-video transcript into the shared cache.
+
+    Corpus rows created before the transcript cache already contain the raw
+    text. Reusing them avoids a needless yt-dlp request when revisiting one
+    of those videos; the original source was not recorded, hence "unknown".
+    """
+    row = conn.execute(
+        """
+        SELECT title, creator, published_at, transcript_text
+        FROM videos WHERE video_id = ?
+        """,
+        (video_id,),
+    ).fetchone()
+    if row is None:
+        return None
+    title, creator, published_at, transcript_text = row
+    return {
+        "transcript": transcript_text,
+        "reason": None,
+        "title": title or None,
+        "creator": creator or None,
+        "published_at": published_at or None,
+        "source": "unknown",
     }
 
 
@@ -117,6 +159,36 @@ def get_transcript(
     if disk_result is not None:
         return _remember(video_id, disk_result)
 
-    result = fetcher(video_id)
-    _save_to_disk(conn, video_id, result)
-    return _remember(video_id, result)
+    corpus_result = _from_corpus(conn, video_id)
+    if corpus_result is not None:
+        _save_to_disk(conn, video_id, corpus_result)
+        return _remember(video_id, corpus_result)
+
+    with _inflight_lock:
+        in_flight = _inflight.get(video_id)
+        if in_flight is None:
+            in_flight = _InFlightFetch(complete=Event())
+            _inflight[video_id] = in_flight
+            is_fetch_leader = True
+        else:
+            is_fetch_leader = False
+
+    if not is_fetch_leader:
+        in_flight.complete.wait()
+        if in_flight.error is not None:
+            raise in_flight.error
+        assert in_flight.result is not None
+        return in_flight.result
+
+    try:
+        result = fetcher(video_id)
+        _save_to_disk(conn, video_id, result)
+        in_flight.result = _remember(video_id, result)
+        return in_flight.result
+    except BaseException as error:
+        in_flight.error = error
+        raise
+    finally:
+        with _inflight_lock:
+            _inflight.pop(video_id, None)
+            in_flight.complete.set()

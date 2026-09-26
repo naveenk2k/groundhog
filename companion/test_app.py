@@ -12,6 +12,7 @@ import tempfile
 import unittest
 import inspect
 from pathlib import Path
+from unittest.mock import Mock, patch
 
 from starlette.testclient import TestClient
 
@@ -54,7 +55,15 @@ corpus.CORPUS_DB_FILE = Path(tempfile.mktemp(suffix=".sqlite"))
 # regardless of the ambient environment.
 companion_config.TRACING_ENABLED = False
 
-from companion.app import app, verdict_endpoint  # noqa: E402 - must follow the patching above
+from companion.app import (  # noqa: E402 - must follow the patching above
+    WatchedVideoRequest,
+    app,
+    delete_video,
+    get_video,
+    transcript,
+    verdict_endpoint,
+    videos_watched,
+)
 
 
 class CorsPreflightTest(unittest.TestCase):
@@ -84,6 +93,34 @@ class VerdictConcurrencyTest(unittest.TestCase):
         # operations. Keeping the route synchronous makes FastAPI dispatch it
         # to its worker thread, leaving the event loop free for status polls.
         self.assertFalse(inspect.iscoroutinefunction(verdict_endpoint))
+
+
+class CorpusRequestIsolationTest(unittest.TestCase):
+    def test_all_blocking_corpus_routes_run_outside_the_event_loop(self):
+        # These routes call SQLite and, for transcript/history paths, may run
+        # yt-dlp, Whisper, or sentence-transformers. They must be synchronous
+        # so FastAPI assigns a worker thread rather than blocking status polls.
+        for endpoint in (transcript, get_video, videos_watched, delete_video):
+            with self.subTest(endpoint=endpoint.__name__):
+                self.assertFalse(inspect.iscoroutinefunction(endpoint))
+
+    @patch("companion.app.add_watched_video")
+    @patch("companion.app.corpus.get_connection")
+    def test_watched_request_uses_and_closes_its_own_connection(self, mock_connection, mock_add):
+        request_conn = Mock()
+        mock_connection.return_value = request_conn
+        mock_add.return_value = {
+            "added": True,
+            "video_id": "video-id",
+            "title": "A video",
+            "reason": None,
+        }
+
+        result = videos_watched(WatchedVideoRequest(video_id="video-id"))
+
+        self.assertEqual(result, {"added": True, "video_id": "video-id", "title": "A video"})
+        mock_add.assert_called_once_with(request_conn, "video-id")
+        request_conn.close.assert_called_once_with()
 
 
 class GetVideoLookupTest(unittest.TestCase):

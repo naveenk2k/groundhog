@@ -9,6 +9,7 @@ companion/transcript.py and corpus storage in companion/corpus.py.
 
 import json
 import logging
+from contextlib import contextmanager
 from typing import Optional
 
 from fastapi import FastAPI
@@ -157,17 +158,21 @@ app.add_middleware(
 if config.DEBUG:
     app.add_middleware(DebugLoggingMiddleware)
 
-# Lazy singleton: opening the corpus connection (and, via embed_text, loading
-# the sentence-transformers model on first use) is expensive enough that we
-# don't want to pay it on every request - see companion/corpus.py.
-_corpus_conn = None
+@contextmanager
+def _corpus_connection():
+    """Open an isolated SQLite connection for one blocking request.
 
-
-def _get_corpus_conn():
-    global _corpus_conn
-    if _corpus_conn is None:
-        _corpus_conn = corpus.get_connection()
-    return _corpus_conn
+    FastAPI dispatches the routes below onto separate worker threads. Sharing
+    one APSW connection between those threads made a history add wait behind
+    unrelated verdict work, despite its transcript already being cached. A
+    request-local connection lets SQLite coordinate short writes normally;
+    the embedding model and transcript cache remain process-wide singletons.
+    """
+    conn = corpus.get_connection()
+    try:
+        yield conn
+    finally:
+        conn.close()
 
 
 @app.get("/health")
@@ -183,7 +188,7 @@ async def root() -> dict:
 
 
 @app.get("/transcript/{video_id}")
-async def transcript(video_id: str) -> dict:
+def transcript(video_id: str) -> dict:
     """Fetch a YouTube video's transcript by ID.
 
     Reuses a successful local transcript cache entry when one exists; the
@@ -196,7 +201,8 @@ async def transcript(video_id: str) -> dict:
     the extension's overlay treats this the same as any other "can't
     evaluate" case.
     """
-    return get_transcript(_get_corpus_conn(), video_id)
+    with _corpus_connection() as conn:
+        return get_transcript(conn, video_id)
 
 
 @app.get("/transcript/status/{video_id}")
@@ -228,11 +234,12 @@ def verdict_endpoint(body: VerdictRequest) -> dict:
     verdict call all come back as `{"error": "..."}` rather than a non-2xx
     status or a hang.
     """
-    return run_verdict_pipeline(_get_corpus_conn(), body.video_id, body.k, body.model)
+    with _corpus_connection() as conn:
+        return run_verdict_pipeline(conn, body.video_id, body.k, body.model)
 
 
 @app.get("/videos/{video_id}")
-async def get_video(video_id: str) -> dict:
+def get_video(video_id: str) -> dict:
     """Look up whether a video is already in the corpus, with none of
     /verdict's embedding/similarity-search/Gemini cost.
 
@@ -241,7 +248,8 @@ async def get_video(video_id: str) -> dict:
     /videos/watched below), and lets the overlay reflect that up front
     instead of always defaulting to "Mark as watched".
     """
-    found = corpus.find_video(_get_corpus_conn(), video_id)
+    with _corpus_connection() as conn:
+        found = corpus.find_video(conn, video_id)
     if found is None:
         return {"found": False}
     return {
@@ -257,7 +265,7 @@ class WatchedVideoRequest(BaseModel):
 
 
 @app.post("/videos/watched")
-async def videos_watched(payload: WatchedVideoRequest) -> dict:
+def videos_watched(payload: WatchedVideoRequest) -> dict:
     """Add a watched video to the corpus.
 
     Thin adapter over companion/verdict_pipeline.py's add_watched_video. The
@@ -277,14 +285,15 @@ async def videos_watched(payload: WatchedVideoRequest) -> dict:
     existing row rather than erroring or duplicating it), so calling this
     endpoint again for the same video is naturally a no-op duplicate-wise.
     """
-    result = add_watched_video(_get_corpus_conn(), payload.video_id)
+    with _corpus_connection() as conn:
+        result = add_watched_video(conn, payload.video_id)
     if result["added"]:
         return {"added": True, "video_id": result["video_id"], "title": result["title"]}
     return {"added": False, "video_id": result["video_id"], "reason": result["reason"]}
 
 
 @app.delete("/videos/{video_id}")
-async def delete_video(video_id: str) -> dict:
+def delete_video(video_id: str) -> dict:
     """Remove a video from the corpus entirely (issue #42): a real DELETE
     of its metadata row and embedding, not a soft-delete flag - see
     DECISIONS.md ("Removing a video from watch history: hard delete, not
@@ -293,5 +302,6 @@ async def delete_video(video_id: str) -> dict:
     `{"removed": False}` covers both "never in the corpus" and "already
     removed" - neither is an error, so this always returns 200.
     """
-    removed = corpus.delete_video(_get_corpus_conn(), video_id)
+    with _corpus_connection() as conn:
+        removed = corpus.delete_video(conn, video_id)
     return {"removed": removed}

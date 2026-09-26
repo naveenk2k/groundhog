@@ -1,0 +1,101 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing vMAJOR.MINOR.PATCH tag to build
+        required: true
+        type: string
+      publish:
+        description: Publish the GitHub release and notify the Homebrew tap
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    env:
+      RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install companion dependencies
+        run: python -m pip install -r requirements.txt
+
+      - name: Validate tag and versions
+        run: python scripts/validate_version.py --tag "$RELEASE_TAG"
+
+      - name: Test release tooling
+        run: python -m unittest discover -s scripts -p "test_*.py"
+
+      - name: Test companion
+        run: python -m unittest discover -s companion -p "test_*.py"
+
+      - name: Test extension
+        run: npm --prefix extension test
+
+      - name: Build release archives
+        run: |
+          version="${RELEASE_TAG#v}"
+          mkdir -p dist
+          python scripts/package_companion.py --output "dist/groundhog-companion-${version}.tar.gz"
+          python scripts/package_extension.py --output "dist/groundhog-extension-${version}.zip"
+          cd dist
+          sha256sum "groundhog-companion-${version}.tar.gz" "groundhog-extension-${version}.zip" > SHA256SUMS
+
+      - name: Upload dry-run artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: groundhog-${{ env.RELEASE_TAG }}
+          path: |
+            dist/groundhog-companion-*.tar.gz
+            dist/groundhog-extension-*.zip
+            dist/SHA256SUMS
+          if-no-files-found: error
+
+      - name: Publish GitHub release
+        if: github.event_name == 'push' || inputs.publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$RELEASE_TAG" \
+            dist/groundhog-companion-*.tar.gz \
+            dist/groundhog-extension-*.zip \
+            dist/SHA256SUMS \
+            --verify-tag \
+            --generate-notes \
+            --title "Groundhog ${RELEASE_TAG#v}"
+
+      - name: Notify Homebrew tap
+        if: github.event_name == 'push' || inputs.publish
+        env:
+          TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          if [[ -z "$TAP_TOKEN" ]]; then
+            echo "HOMEBREW_TAP_TOKEN is not configured; skipping tap update"
+            exit 0
+          fi
+          gh api --method POST repos/naveenk2k/homebrew-tap/dispatches \
+            -f event_type=groundhog-release \
+            -f "client_payload[tag]=$RELEASE_TAG"

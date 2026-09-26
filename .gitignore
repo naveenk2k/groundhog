@@ -19,6 +19,7 @@ __pycache__/
 .logs/
 .backfill-checkpoint.jsonl
 .models/
+/dist/
 
 # OS
 .DS_Store

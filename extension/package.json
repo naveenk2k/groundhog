@@ -3,6 +3,8 @@
   "private": true,
   "description": "Groundhog browser extension - see ../README.md for the full project.",
   "scripts": {
+    "package": "python3 ../scripts/package_extension.py",
+    "package:check": "python3 ../scripts/package_extension.py --check dist/groundhog-extension-$(node -p \"require('./manifest.json').version\").zip",
     "test": "node --test *.test.js"
   }
 }

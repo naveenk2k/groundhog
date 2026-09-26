@@ -1,0 +1,97 @@
+class Groundhog < Formula
+  include Language::Python::Virtualenv
+
+  desc "Local companion service for the Groundhog browser extension"
+  homepage "https://github.com/naveenk2k/groundhog"
+  url "@@SOURCE_URL@@"
+  sha256 "@@SOURCE_SHA256@@"
+  license "MIT"
+
+  depends_on "python@3.12"
+
+  pypi_packages extra_packages: [
+    "apsw",
+    "ddtrace==4.13.1",
+    "fastapi",
+    "google-genai",
+    "sentence-transformers",
+    "sqlite-vec",
+    "uvicorn",
+    "yt-dlp==2026.8.19",
+  ]
+
+@@PYTHON_RESOURCES@@
+
+  def install
+    app = libexec/"app"
+    app.install "companion"
+
+    venv = virtualenv_create(libexec, "python3.12")
+    venv.pip_install resources
+
+    (bin/"groundhog-companion").write <<~SH
+      #!/bin/bash
+      set -euo pipefail
+
+      config_file="#{etc}/groundhog/groundhog.env"
+      if [[ -f "${config_file}" ]]; then
+        set -a
+        # shellcheck disable=SC1090
+        source "${config_file}"
+        set +a
+      fi
+
+      export PYTHONPATH="#{app}"
+      export GROUNDHOG_SECRET_FILE="#{var}/groundhog/secret"
+      export GROUNDHOG_CORPUS_DB="#{var}/groundhog/corpus.db"
+      export XDG_CACHE_HOME="#{var}/groundhog/cache"
+      exec "#{venv.root}/bin/uvicorn" companion.app:app "$@"
+    SH
+  end
+
+  def post_install
+    (var/"groundhog/cache").mkpath
+    (var/"groundhog/log").mkpath
+    (etc/"groundhog").mkpath
+
+    secret = var/"groundhog/secret"
+    unless secret.exist?
+      require "securerandom"
+      secret.atomic_write("#{SecureRandom.hex(32)}\n")
+      secret.chmod(0600)
+    end
+
+    config = etc/"groundhog/groundhog.env"
+    config.write("# Add your Gemini API key, then restart the service.\nGEMINI_API_KEY=\n") unless config.exist?
+  end
+
+  service do
+    run [opt_bin/"groundhog-companion", "--host", "127.0.0.1", "--port", "8787"]
+    keep_alive true
+    working_dir var/"groundhog"
+    log_path var/"groundhog/log/companion.log"
+    error_log_path var/"groundhog/log/companion.error.log"
+    environment_variables PATH: std_service_path_env
+  end
+
+  test do
+    secret = testpath/"secret"
+    secret.write("test-secret\n")
+
+    port = free_port
+    pid = fork do
+      ENV["GROUNDHOG_SECRET_FILE"] = secret
+      ENV["GROUNDHOG_CORPUS_DB"] = testpath/"corpus.db"
+      ENV["XDG_CACHE_HOME"] = testpath/"cache"
+      exec bin/"groundhog-companion", "--host", "127.0.0.1", "--port", port.to_s
+    end
+
+    begin
+      sleep 2
+      assert_match '"status":"ok"', shell_output("curl --silent http://127.0.0.1:#{port}/health")
+    ensure
+      Process.kill("TERM", pid)
+      Process.wait(pid)
+    end
+  end
+end

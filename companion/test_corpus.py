@@ -287,21 +287,16 @@ class CorpusMigrationTest(unittest.TestCase):
 
 
 class GetModelOfflineFallbackTest(unittest.TestCase):
-    """get_model() tries HF_HUB_OFFLINE first (skips huggingface_hub's
+    """get_model() tries a cache-only load first (skips huggingface_hub's
     per-file cache-validation round trip) and falls back to a normal,
     network-touching load if the model isn't cached locally at all."""
 
     def setUp(self):
         self._saved_model = corpus._model
         corpus._model = None
-        self._saved_offline_env = os.environ.pop("HF_HUB_OFFLINE", None)
 
     def tearDown(self):
         corpus._model = self._saved_model
-        if self._saved_offline_env is not None:
-            os.environ["HF_HUB_OFFLINE"] = self._saved_offline_env
-        else:
-            os.environ.pop("HF_HUB_OFFLINE", None)
 
     def test_falls_back_to_online_load_when_not_cached(self):
         fake_model = object()
@@ -313,9 +308,13 @@ class GetModelOfflineFallbackTest(unittest.TestCase):
 
         self.assertIs(result, fake_model)
         self.assertEqual(mock_st.call_count, 2)
-        # The failed offline attempt's env var is cleared before the retry,
-        # so it doesn't linger and affect anything else in the process.
-        self.assertNotIn("HF_HUB_OFFLINE", os.environ)
+        self.assertEqual(
+            mock_st.call_args_list,
+            [
+                unittest.mock.call(corpus.EMBEDDING_MODEL_NAME, local_files_only=True),
+                unittest.mock.call(corpus.EMBEDDING_MODEL_NAME, local_files_only=False),
+            ],
+        )
 
     def test_succeeds_offline_on_first_try_when_cached(self):
         fake_model = object()
@@ -325,8 +324,9 @@ class GetModelOfflineFallbackTest(unittest.TestCase):
             result = corpus.get_model()
 
         self.assertIs(result, fake_model)
-        mock_st.assert_called_once()
-        self.assertEqual(os.environ.get("HF_HUB_OFFLINE"), "1")
+        mock_st.assert_called_once_with(
+            corpus.EMBEDDING_MODEL_NAME, local_files_only=True
+        )
 
 
 class WatchedAtFormattingTest(unittest.TestCase):

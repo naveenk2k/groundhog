@@ -201,6 +201,65 @@ Gemini instead of Claude, why full transcripts instead of excerpts, why a
    interruption picks up where it left off instead of starting over. You can
    also add one video at a time with `python add_video.py <url-or-video-id>`.
 
+## Starting and restarting Groundhog
+
+After you run `./install.sh`, you usually do not need to start the companion
+by hand. The installer registers it as a per-user macOS `launchd` job named
+`com.groundhog.companion`. Its configuration lives at:
+
+```text
+~/Library/LaunchAgents/com.groundhog.companion.plist
+```
+
+macOS starts the companion when you log in and restarts it if the process
+exits. The browser starts the extension whenever it is enabled, so there is
+no separate extension process to run.
+
+Check that the companion is responding:
+
+```bash
+curl http://127.0.0.1:8787/health
+```
+
+Inspect the `launchd` job or follow its logs:
+
+```bash
+launchctl print gui/$(id -u)/com.groundhog.companion
+tail -f .logs/companion.log .logs/companion.error.log
+```
+
+### After changing the Python companion
+
+The installed server does not use Uvicorn's auto-reload mode. Saving a Python
+file will not update the running process. Restart it with:
+
+```bash
+launchctl kickstart -k gui/$(id -u)/com.groundhog.companion
+```
+
+The older unload/load commands work too:
+
+```bash
+launchctl unload "$HOME/Library/LaunchAgents/com.groundhog.companion.plist"
+launchctl load -w "$HOME/Library/LaunchAgents/com.groundhog.companion.plist"
+```
+
+Rerunning `./install.sh` also restarts the companion. Use that when you change
+`requirements.txt`, `.env`, or the launch configuration; for ordinary Python
+edits, `kickstart` is quicker.
+
+### After changing the browser extension
+
+- **Chrome:** open `chrome://extensions`, find Groundhog, and click its reload
+  button. Then refresh the YouTube tab you are testing.
+- **Safari:** reload the temporary extension from Safari's Extensions
+  settings, then open a fresh YouTube tab. Reloading an existing tab is not
+  enough because of [issue #40](https://github.com/naveenk2k/groundhog/issues/40).
+
+Changes to the companion and extension are independent. Restart `launchd`
+after Python changes, reload the browser extension after changes under
+`extension/`, and do both when a change spans both sides.
+
 ## Day-to-day usage
 
 - The overlay runs automatically on any `youtube.com/watch` page, and can be

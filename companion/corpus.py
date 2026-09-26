@@ -109,29 +109,31 @@ def get_model():
     module - e.g. just to call insert_video with a precomputed embedding -
     doesn't pay the model-load cost if embed_text() is never called.
 
-    Tries HF_HUB_OFFLINE first: even when the model is already fully cached
-    locally, huggingface_hub still does a HEAD-request round trip per file
+    Tries a cache-only load first: even when the model is already fully cached
+    locally, huggingface_hub otherwise does a HEAD-request round trip per file
     to validate the cache against the hub (confirmed live: ~30s across a
     dozen-plus requests to huggingface.co on every companion restart, purely
-    to re-confirm files that were already there). Offline mode skips all of
-    that. Falls back to a normal (network-touching) load if offline mode
-    fails with OSError - the error huggingface_hub raises when it can't find
-    the model locally at all (e.g. this machine's very first run).
+    to re-confirm files that were already there). Falls back to a normal
+    network-enabled load if the cache-only attempt raises OSError, as it will
+    on this machine's first run.
+
+    Use SentenceTransformer's per-call flag instead of mutating
+    HF_HUB_OFFLINE. huggingface_hub reads that environment variable into
+    module-level state during import, so clearing it after a failed offline
+    attempt does not reliably re-enable networking in the same process.
     """
     global _model
     if _model is None:
-        os.environ.setdefault("HF_HUB_OFFLINE", "1")
         from sentence_transformers import SentenceTransformer
 
         try:
-            _model = SentenceTransformer(EMBEDDING_MODEL_NAME)
+            _model = SentenceTransformer(EMBEDDING_MODEL_NAME, local_files_only=True)
         except OSError:
             logger.info(
                 "%s not cached locally - falling back to an online load for this run",
                 EMBEDDING_MODEL_NAME,
             )
-            os.environ.pop("HF_HUB_OFFLINE", None)
-            _model = SentenceTransformer(EMBEDDING_MODEL_NAME)
+            _model = SentenceTransformer(EMBEDDING_MODEL_NAME, local_files_only=False)
     return _model
 
 

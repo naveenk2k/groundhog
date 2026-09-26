@@ -109,11 +109,22 @@ def add_watched_video(conn: apsw.Connection, video_id: str) -> WatchedResult:
     `{"added": False, "reason": "..."}` rather than raising, so a video
     with no transcript just doesn't get added.
 
-    Re-watching an already-corpused video is not a special case here:
-    `corpus.insert_video` already upserts by `video_id`, so calling this
-    again for the same video is naturally a no-op duplicate-wise.
+    An already-corpused video is reported as such without fetching or
+    rewriting it. This keeps the endpoint genuinely idempotent: a delayed
+    watch-threshold request cannot turn a rewatch into a fresh add or replace
+    the original `watched_at` timestamp.
     """
     logger.info("watched-video add requested for video %s", video_id)
+    existing = corpus.find_video(conn, video_id)
+    if existing is not None:
+        set_status(video_id, "complete")
+        return {
+            "added": False,
+            "video_id": video_id,
+            "title": existing["title"],
+            "reason": "already_watched",
+        }
+
     with _traced_stage("transcript_fetch"):
         fetched = get_transcript(conn, video_id, fetch_transcript)
     if fetched["transcript"] is None:

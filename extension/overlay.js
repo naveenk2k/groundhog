@@ -281,6 +281,27 @@ function shouldShowEvaluationTiming(state) {
   );
 }
 
+/**
+ * Turn a raw POST /videos/watched result into the transient footer note to
+ * show. An idempotent already-watched response is deliberately silent: it
+ * describes existing state, not a new user-visible event.
+ */
+function describeWatchedResult(result) {
+  if (result && result.added) {
+    return { kind: "success", message: "Added to your watch history." };
+  }
+  if (result && result.reason === "already_watched") {
+    return null;
+  }
+  if (result && result.reason === "not_configured") {
+    return { kind: "failure", message: "Groundhog isn't set up yet - open the options page." };
+  }
+  if (result && result.reason === "timeout") {
+    return { kind: "failure", message: "Adding this video took too long. Try again." };
+  }
+  return { kind: "failure", message: "Couldn't add this video to your watch history." };
+}
+
 if (typeof module !== "undefined" && module.exports) {
   module.exports = {
     classifyOverlayError,
@@ -289,6 +310,7 @@ if (typeof module !== "undefined" && module.exports) {
     cannotMarkWatched,
     isGeminiBusyError,
     shouldShowEvaluationTiming,
+    describeWatchedResult,
   };
 }
 
@@ -394,19 +416,6 @@ if (typeof module !== "undefined" && module.exports) {
    * same "short and calm, never raw exception text" rule classifyOverlayError
    * follows above.
    */
-  function describeWatchedResult(result) {
-    if (result && result.added) {
-      return { kind: "success", message: "Added to your watch history." };
-    }
-    if (result && result.reason === "not_configured") {
-      return { kind: "failure", message: "Groundhog isn't set up yet - open the options page." };
-    }
-    if (result && result.reason === "timeout") {
-      return { kind: "failure", message: "Adding this video took too long. Try again." };
-    }
-    return { kind: "failure", message: "Couldn't add this video to your watch history." };
-  }
-
   /** Same idea as describeWatchedResult, for a "Remove from watch history" click (issue #42). */
   function describeRemoveResult(result) {
     if (result && result.removed) {
@@ -1651,11 +1660,15 @@ if (typeof module !== "undefined" && module.exports) {
       }
       clearWatchAddTimer();
       state = setWatchAddPending(state, false);
-      state = setWatchNote(state, describeWatchedResult(result));
-      if (result && result.added) {
+      const note = describeWatchedResult(result);
+      state = note ? setWatchNote(state, note) : clearWatchNote(state);
+      if (result && (result.added || result.reason === "already_watched")) {
         state = setAlreadyWatchedFlag(state);
       }
       render();
+      if (!note) {
+        return;
+      }
       watchNoteTimer = setTimeout(() => {
         state = clearWatchNote(state);
         watchNoteTimer = null;

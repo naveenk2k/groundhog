@@ -281,6 +281,9 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     );
   }
   if (message.type === "GROUNDHOG_WATCHED_RESULT") {
+    if (message.result && (message.result.added || message.result.reason === "already_watched")) {
+      watchTracker.markAlreadyWatched(message.videoId);
+    }
     GroundhogOverlay.setWatchedResult(message.videoId, message.result);
   }
   if (message.type === "GROUNDHOG_REMOVE_RESULT") {
@@ -296,6 +299,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   }
   if (message.type === "GROUNDHOG_LOOKUP_RESULT") {
     if (message.result && message.result.found) {
+      watchTracker.markAlreadyWatched(message.videoId);
       GroundhogOverlay.showAlreadyWatched(message.videoId, message.result);
     } else {
       // Not in the corpus - proceed with the real verdict check now,

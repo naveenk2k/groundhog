@@ -122,6 +122,33 @@ class VerdictPipelineTest(unittest.TestCase):
         rows = self.conn.execute("SELECT video_id, title FROM videos").fetchone()
         self.assertEqual(rows, ("vid123", "Bread Baking"))
 
+    @patch("companion.verdict_pipeline.fetch_transcript")
+    def test_add_watched_video_does_not_readd_an_existing_corpus_video(self, mock_fetch):
+        original_watched_at = "2026-01-05T10:00:00Z"
+        corpus.insert_video(
+            self.conn,
+            "vid123",
+            "Already Watched",
+            "A Creator",
+            original_watched_at,
+            "the existing transcript",
+            embedding=[0.0] * corpus.EMBEDDING_DIMENSIONS,
+        )
+
+        result = verdict_pipeline.add_watched_video(self.conn, "vid123")
+
+        self.assertEqual(
+            result,
+            {
+                "added": False,
+                "video_id": "vid123",
+                "title": "Already Watched",
+                "reason": "already_watched",
+            },
+        )
+        mock_fetch.assert_not_called()
+        self.assertEqual(corpus.find_video(self.conn, "vid123")["watched_at"], original_watched_at)
+
     @patch("companion.verdict_pipeline.verdict.get_verdict")
     @patch("companion.verdict_pipeline.fetch_transcript")
     def test_run_verdict_pipeline_logs_video_id(self, mock_fetch, mock_get_verdict):
